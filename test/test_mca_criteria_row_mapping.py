@@ -203,6 +203,14 @@ class McaCriteriaRowMappingTests(unittest.TestCase):
 
     def setUp(self):
         from qgis.core import QgsProject
+        from qgis.PyQt.QtWidgets import QMessageBox
+
+        # Re-assert Yes enum after other test modules may have patched question→int(1)
+        yes = getattr(getattr(QMessageBox, "StandardButton", QMessageBox), "Yes", 1)
+        QMessageBox.warning = staticmethod(lambda *a, **k: 1)
+        QMessageBox.critical = staticmethod(lambda *a, **k: 1)
+        QMessageBox.information = staticmethod(lambda *a, **k: 1)
+        QMessageBox.question = staticmethod(lambda *a, **k: yes)
 
         QgsProject.instance().clear()
         self.plugin = _plugin.classFactory(_FakeIface())

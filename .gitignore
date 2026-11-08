@@ -25,3 +25,6 @@ replay_pid*.log
 
 # Release packaging outputs (never ship inside plugin ZIP)
 /dist/
+
+# Local GUI acceptance fixtures (not part of the public plugin source)
+/acceptance_gui/

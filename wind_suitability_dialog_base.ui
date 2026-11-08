@@ -1285,6 +1285,18 @@
           <number>6</number>
          </property>
          <item>
+          <widget class="QLabel" name="lbl_add_criteria">
+           <property name="font">
+            <font>
+             <bold>true</bold>
+            </font>
+           </property>
+           <property name="text">
+            <string>Add Criteria</string>
+           </property>
+          </widget>
+         </item>
+         <item>
           <widget class="QPushButton" name="btn_add_layer_to_table">
            <property name="minimumSize">
             <size>
@@ -1293,10 +1305,10 @@
             </size>
            </property>
            <property name="toolTip">
-            <string>Add a raster layer already loaded in the current QGIS project as an MCA criterion.</string>
+            <string>Add a raster or vector layer already loaded in the current QGIS project as an MCA criterion. Vectors require Binary or Proximity analysis.</string>
            </property>
            <property name="text">
-            <string>Add Layer</string>
+            <string>Add Layer from Map</string>
            </property>
           </widget>
          </item>
@@ -1317,6 +1329,22 @@
           </widget>
          </item>
          <item>
+          <widget class="QPushButton" name="btn_add_vector_criterion">
+           <property name="minimumSize">
+            <size>
+             <width>150</width>
+             <height>0</height>
+            </size>
+           </property>
+           <property name="toolTip">
+            <string>Browse for a vector file (GPKG, SHP, GeoJSON, …) and convert it to an MCA criterion via Binary or Proximity analysis.</string>
+           </property>
+           <property name="text">
+            <string>Add Vector Criterion...</string>
+           </property>
+          </widget>
+         </item>
+         <item>
           <spacer name="verticalSpacer_weights_input_mgmt">
            <property name="orientation">
             <enum>Qt::Vertical</enum>
@@ -1331,6 +1359,18 @@
             </size>
            </property>
           </spacer>
+         </item>
+         <item>
+          <widget class="QLabel" name="lbl_manage_criteria">
+           <property name="font">
+            <font>
+             <bold>true</bold>
+            </font>
+           </property>
+           <property name="text">
+            <string>Manage Criteria</string>
+           </property>
+          </widget>
          </item>
          <item>
           <widget class="QPushButton" name="btn_remove_layer_from_table">
@@ -1439,6 +1479,18 @@
             </size>
            </property>
           </spacer>
+         </item>
+         <item>
+          <widget class="QLabel" name="lbl_mca_analysis_actions">
+           <property name="font">
+            <font>
+             <bold>true</bold>
+            </font>
+           </property>
+           <property name="text">
+            <string>Analysis</string>
+           </property>
+          </widget>
          </item>
          <item>
           <widget class="QPushButton" name="btn_new_mca_analysis">

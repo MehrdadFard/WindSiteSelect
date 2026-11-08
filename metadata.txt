@@ -6,12 +6,12 @@ name=Wind Site Select
 qgisMinimumVersion=4.0
 qgisMaximumVersion=4.99
 description=A QGIS plugin for wind energy site suitability assessment, spatial filtering, and multi-criteria decision analysis.
-version=0.3.1
+version=0.3.2
 author=Mehrdad Fard
 email=greensite.ai@gmail.com
 license=GPL-2.0-or-later
 
-about=Wind Site Select is a GIS-based wind energy site selection tool for professional GIS users. It supports AOI definition, wind and depth/bathymetry screening, spatial filtering with exclusion and inclusion constraints, and multi-criteria analysis (MCA) with criteria weights, raster/vector outputs, and optional Excel/CSV reporting. It does not perform bankable energy-yield calculations and does not replace engineering, environmental, grid-connection, or permitting studies. Users must supply appropriate source datasets; no regional sample rasters are selected automatically. This Stable release was verified on Windows with QGIS 4.0.3. QGIS 3.x (including 3.44 LTR), Linux, and macOS are not claimed as supported by this release.
+about=Wind Site Select is a GIS-based wind energy site selection tool for professional GIS users. It supports AOI definition, wind and depth/bathymetry screening, spatial filtering with exclusion and inclusion constraints, and multi-criteria analysis (MCA) with criteria weights, raster/vector outputs, and optional Excel/CSV reporting. Decision Making supports raster criteria and vector Binary/Proximity analysis aligned to the current Spatial Filtering master grid. It does not perform bankable energy-yield calculations and does not replace engineering, environmental, grid-connection, or permitting studies. Users must supply appropriate source datasets; no regional sample rasters are selected automatically. This Stable release was verified on Windows with QGIS 4.0.3. QGIS 3.x (including 3.44 LTR), Linux, and macOS are not claimed as supported by this release.
 
 tracker=https://github.com/MehrdadFard/WindSiteSelect/issues
 repository=https://github.com/MehrdadFard/WindSiteSelect
@@ -20,7 +20,8 @@ repository=https://github.com/MehrdadFard/WindSiteSelect
 # Recommended items:
 
 hasProcessingProvider=no
-changelog=0.3.1: First Stable release. MCA criteria restore/row-mapping fix; Decision Making UX (Add Raster Criterion vs Save/Load Criteria Setup); Spatial Filtering current-run master reference for MCA; durable results-root restore after session reset. Verified on Windows QGIS 4.0.3 only.
+changelog=0.3.2: Stable release. Restores Decision Making vector criteria (Add Vector Criterion; Binary / Proximity Analysis) with AOI and Spatial Filtering master-grid gates. Proximity outputs are aligned to the authoritative spatial_filtered master grid, masked to the current AOI, and validated before map add. AOI changes invalidate prior Spatial Filtering session masters so a geographically unrelated flat alias cannot be reused. Large vector Proximity retains spatial candidate filtering (no first-100 sampling). Criteria JSON schema v2 with v1 compatibility. Verified on Windows QGIS 4.0.3 only.
+0.3.1: First Stable release. MCA criteria restore/row-mapping fix; Decision Making UX (Add Raster Criterion vs Save/Load Criteria Setup); Spatial Filtering current-run master reference for MCA; durable results-root restore after session reset. Verified on Windows QGIS 4.0.3 only.
 0.3.0: First public release candidate as Wind Site Select. Spatial results lifecycle with authoritative run manifests, MCA criteria persistence, GPKG WAL-safe publication, packaging under package id wind_site_select, and GPL-2.0-or-later licensing.
 
 # Tags are comma separated with spaces allowed

@@ -251,18 +251,22 @@ class McaDecisionUxTests(unittest.TestCase):
 
     def test_01_button_labels_and_tooltips(self):
         d = self.plugin.dlg
-        self.assertEqual(d.btn_add_layer_to_table.text(), "Add Layer")
+        self.assertEqual(d.btn_add_layer_to_table.text(), "Add Layer from Map")
         self.assertEqual(d.btn_add_layer_from_file.text(), "Add Raster Criterion...")
+        self.assertEqual(d.btn_add_vector_criterion.text(), "Add Vector Criterion...")
         self.assertEqual(d.btn_export_criteria.text(), "Save Criteria Setup...")
         self.assertEqual(d.btn_import_criteria.text(), "Load Criteria Setup...")
         self.assertEqual(d.btn_new_mca_analysis.text(), "New MCA Analysis")
-        self.assertIn("loaded in the current QGIS project", d.btn_add_layer_to_table.toolTip())
+        self.assertIn("raster or vector", d.btn_add_layer_to_table.toolTip().lower())
         self.assertIn("Browse for a raster file", d.btn_add_layer_from_file.toolTip())
+        self.assertIn("vector", d.btn_add_vector_criterion.toolTip().lower())
         self.assertIn("JSON file", d.btn_export_criteria.toolTip())
         self.assertIn("previously saved", d.btn_import_criteria.toolTip())
         hint = getattr(d, "lbl_mca_workflow_hint", None)
         self.assertIsNotNone(hint)
         self.assertIn("Prospect Analysis and Spatial Filtering", hint.text())
+        self.assertEqual(d.lbl_add_criteria.text(), "Add Criteria")
+        self.assertEqual(d.lbl_manage_criteria.text(), "Manage Criteria")
 
     def test_02_add_raster_appends_without_clearing(self):
         from qgis.core import QgsProject, QgsRasterLayer

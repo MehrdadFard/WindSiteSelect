@@ -85,7 +85,7 @@ Supported inputs follow normal QGIS/GDAL raster and vector formats. CRS handling
 4. **Depth analysis** (as needed) — select DEM/bathymetry, set thresholds, run screening.
 5. **Prospect area** — combine screens; optionally polygonize.
 6. **Spatial filter** — add exclude/include layers, run spatial filtering to obtain the final suitable mask and polygons.
-7. **Decision Making** — add raster criteria (Add Layer / Add Raster Criterion), or Load Criteria Setup; set weights and roles. Optionally Save Criteria Setup for reuse.
+7. **Decision Making** — add raster and/or vector criteria (Add Layer from Map / Add Raster Criterion / Add Vector Criterion), or Load Criteria Setup; set weights and roles. Optionally Save Criteria Setup for reuse.
 8. **MCA Evaluation** — generate the analysis grid, then Run MCA Analysis (requires Spatial Filtering outputs).
 9. **Review outputs** — rasters, polygons, and optional Excel/CSV report in a user-chosen folder.
 10. **Iterate** — re-run spatial or MCA steps as inputs change; the plugin tracks the current run via `results/current_run.json`.
@@ -94,7 +94,7 @@ Supported inputs follow normal QGIS/GDAL raster and vector formats. CRS handling
 
 ## 6. Multi-criteria analysis (MCA)
 
-MCA scores candidate locations using user-defined raster criteria and weights.
+MCA scores candidate locations using user-defined criteria and weights. Scoring always runs on rasters aligned to the current analysis master grid. Vector inputs are converted first (Binary or Proximity); they are never scored as raw geometries.
 
 ### Required order
 
@@ -108,9 +108,23 @@ If Spatial Filtering has not been completed, MCA will stop with an actionable er
 
 | Action | Meaning |
 |---|---|
-| **Add Layer** | Add a raster already loaded in the current QGIS project as one MCA criterion. |
+| **Add Layer from Map** | Add a raster or vector already loaded in the current QGIS project. Vectors open **Select Vector Analysis Method**. |
 | **Add Raster Criterion...** | Browse for a raster file and **append** it as a new criterion (does not replace existing rows). |
+| **Add Vector Criterion...** | Browse for a vector file (GPKG, SHP, GeoJSON, and other OGR-supported formats) and convert it via Binary or Proximity analysis. |
 | **Remove Layer** / **Normalize Weights** | Manage the current table rows. |
+
+### Vector criteria: Binary vs Proximity
+
+When a vector is selected, choose one method in **Select Vector Analysis Method**:
+
+| Method | Behaviour |
+|---|---|
+| **Binary Analysis** | Rasterize features onto the master grid: burn value **1** where features are present, background **0**, Byte NoData **255**. Point, line, and polygon geometries supported by the historical GDAL rasterize path are accepted; empty / null-geometry layers are rejected. |
+| **Proximity Analysis** | Rasterize presence (as above), then compute distance to value **1** with `gdal:proximity` in **georeferenced units** (meters on a projected analysis CRS such as EPSG:3035 — not geographic degrees). Unlimited max distance. The distance raster is inverse min–max normalized to suitability in **[0, 1]** (`1` = nearest, `0` = farthest within the observed range), matching the original Suitability Analysis workflow. |
+
+Derived rasters are aligned to the current master reference grid (cell size, dimensions, CRS, geotransform). Beneficial / Penalizing roles apply after this conversion during MCA normalization: for Proximity suitability, **Beneficial** rewards proximity; choosing **Penalizing** inverts that ranking. Binary presence as **Penalizing** lowers scores where features exist (exclusion-like). Existing plain-raster scoring mathematics are unchanged.
+
+CRS requirement: distance/proximity analysis expects a **metric projected** master grid. Do not interpret proximity outputs as degrees.
 
 ### Saving and loading a criteria setup
 
@@ -172,21 +186,22 @@ No separate pip install is required for core functionality on a standard QGIS de
 
 | Environment | Status |
 |---|---|
-| Windows + QGIS **4.0.3** | **Verified** (Stable 0.3.1) |
+| Windows + QGIS **4.0.3** | **Verified** (Stable 0.3.2) |
 | QGIS 3.44 LTR / other QGIS 3.x | **Not supported** by this Stable release |
 | Linux | **Not verified** |
 | macOS | **Not verified** |
 
-`metadata.txt` declares `qgisMinimumVersion=4.0` and `qgisMaximumVersion=4.99`. QGIS 3.44 LTR users should not treat 0.3.1 as compatible until a separately verified build exists. Impact: LTR 3.x deployments cannot install this Stable build under the declared minimum without overriding metadata.
+`metadata.txt` declares `qgisMinimumVersion=4.0` and `qgisMaximumVersion=4.99`. QGIS 3.44 LTR users should not treat 0.3.2 as compatible until a separately verified build exists. Impact: LTR 3.x deployments cannot install this Stable build under the declared minimum without overriding metadata.
 
 ---
 
 ## 10. Current limitations
 
-- Stable **0.3.1** is verified on **Windows QGIS 4.0.3** only.
+- Stable **0.3.2** is verified on **Windows QGIS 4.0.3** only.
 - Optional Excel reporting depends on **openpyxl** (not bundled; install into the QGIS Python environment if Excel export is required).
 - Interactive workflows assume a desktop QGIS session (not QGIS Server).
 - Large rasters and complex MCA grids can be memory- and disk-intensive.
+- After changing the AOI, Spatial Filtering must be re-run before Proximity or MCA can use the master grid for the new AOI.
 - Legacy internal identifiers (module/class names, QSettings namespace, Qt resource prefix) remain for compatibility and are not the public product name.
 
 ---
@@ -241,7 +256,17 @@ Repository: https://github.com/MehrdadFard/WindSiteSelect
 
 ## 14. Release history
 
-### 0.3.1 – First Stable (2026-03)
+### 0.3.2 – Stable (2026-11)
+
+- Stable release (`experimental=False`).
+- Decision Making vector criteria restored: **Add Vector Criterion** with **Binary** and **Proximity Analysis**.
+- Proximity requires a live AOI and the current Spatial Filtering `spatial_filtered` master grid; outputs match that grid, are masked to the AOI, and are validated before being added to the map.
+- AOI changes invalidate prior Spatial Filtering session masters so a geographically unrelated flat `results/spatial_filtered.tif` alias cannot be reused across AOIs.
+- Large-vector Proximity keeps spatial candidate filtering (does not fall back to first-100 feature sampling).
+- Criteria JSON schema v2 with v1 compatibility.
+- Verified on Windows with QGIS **4.0.3** only. QGIS 3.x (including 3.44 LTR), Linux, and macOS are not claimed as supported.
+
+### 0.3.1 – First Stable (2026-11)
 
 - First Stable release (`experimental=False`).
 - MCA criteria restore and row-mapping corrections so Decision Making table rows stay aligned after add/remove/load.

@@ -18,7 +18,10 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 
 CURRENT_RUN_MANIFEST_NAME = "current_run.json"
 MANIFEST_SCHEMA_VERSION = 1
-CRITERIA_SCHEMA_VERSION = 1
+# v1 = raster-only criteria export; v2 adds optional vector-derived criterion metadata.
+# Exports use v2; validate_criteria_payload accepts v1 and v2.
+CRITERIA_SCHEMA_VERSION = 2
+CRITERIA_SCHEMA_VERSION_MIN = 1
 RUNS_SUBDIR = "runs"
 SPATIAL_SUBDIR = "spatial"
 MCA_SUBDIR = "mca"
@@ -756,6 +759,18 @@ def manifest_paths_exist(manifest: Dict[str, Any], results_root: str) -> Tuple[b
 # MCA criteria JSON (export/import)
 # ---------------------------------------------------------------------------
 
+_VECTOR_CRITERION_OPTIONAL_KEYS = (
+    "source_type",  # "raster" | "vector"
+    "analysis_mode",  # "binary" | "proximity" | None for plain raster
+    "geometry_type",
+    "source_vector_path",
+    "source_vector_id",
+    "source_vector_name",
+    "derived_raster_path",
+    "processing_params",
+)
+
+
 def build_criteria_export_payload(criteria: List[Dict[str, Any]], metadata: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     clean_criteria = []
     for c in criteria:
@@ -770,6 +785,13 @@ def build_criteria_export_payload(criteria: List[Dict[str, Any]], metadata: Opti
         }
         if c.get("crs"):
             item["crs"] = c["crs"]
+        source_type = c.get("source_type") or "raster"
+        item["source_type"] = source_type if source_type in ("raster", "vector") else "raster"
+        for key in _VECTOR_CRITERION_OPTIONAL_KEYS:
+            if key == "source_type":
+                continue
+            if c.get(key) is not None:
+                item[key] = c.get(key)
         clean_criteria.append(item)
     return {
         "schema_version": CRITERIA_SCHEMA_VERSION,
@@ -790,6 +812,7 @@ def validate_criteria_payload(data: Any) -> Tuple[bool, str, Optional[Dict[str, 
     """
     Validate imported criteria JSON without mutating UI state.
     Returns (ok, error, normalized_payload).
+    Accepts schema_version 1 (legacy raster-only) and 2 (vector metadata).
     """
     if not isinstance(data, dict):
         return False, "Criteria JSON root must be an object", None
@@ -798,7 +821,7 @@ def validate_criteria_payload(data: Any) -> Tuple[bool, str, Optional[Dict[str, 
         version = int(version)
     except (TypeError, ValueError):
         return False, "Invalid schema_version", None
-    if version != CRITERIA_SCHEMA_VERSION:
+    if version < CRITERIA_SCHEMA_VERSION_MIN or version > CRITERIA_SCHEMA_VERSION:
         return False, "Unsupported criteria schema_version: {}".format(version), None
     criteria = data.get("criteria")
     if not isinstance(criteria, list):
@@ -841,6 +864,14 @@ def validate_criteria_payload(data: Any) -> Tuple[bool, str, Optional[Dict[str, 
         layer_path = c.get("layer_path")
         if layer_path is not None and not isinstance(layer_path, str):
             return False, "criteria[{}] layer_path must be a string".format(i), None
+        source_type = c.get("source_type") or "raster"
+        if source_type not in ("raster", "vector"):
+            return False, "criteria[{}] has invalid source_type {!r}".format(i, source_type), None
+        analysis_mode = c.get("analysis_mode")
+        if analysis_mode is not None and analysis_mode not in ("binary", "proximity"):
+            return False, "criteria[{}] has invalid analysis_mode {!r}".format(i, analysis_mode), None
+        if source_type == "vector" and analysis_mode is None:
+            return False, "criteria[{}] vector criterion requires analysis_mode".format(i), None
         item = {
             "layer_name": name,
             "weight": weight,
@@ -849,9 +880,32 @@ def validate_criteria_payload(data: Any) -> Tuple[bool, str, Optional[Dict[str, 
             "save": bool(c.get("save", True)),
             "layer_id": c.get("layer_id"),
             "layer_path": layer_path,
+            "source_type": source_type,
         }
+        if analysis_mode is not None:
+            item["analysis_mode"] = analysis_mode
+        for key in (
+            "geometry_type",
+            "source_vector_path",
+            "source_vector_id",
+            "source_vector_name",
+            "derived_raster_path",
+        ):
+            val = c.get(key)
+            if val is not None and not isinstance(val, str):
+                return False, "criteria[{}] {} must be a string".format(i, key), None
+            if val is not None:
+                item[key] = val
+        params = c.get("processing_params")
+        if params is not None:
+            if not isinstance(params, dict):
+                return False, "criteria[{}] processing_params must be an object".format(i), None
+            item["processing_params"] = params
         if isinstance(c.get("crs"), dict):
             item["crs"] = c["crs"]
+        # Prefer derived raster path as the MCA scoring path when present
+        if item.get("derived_raster_path") and not item.get("layer_path"):
+            item["layer_path"] = item["derived_raster_path"]
         normalized.append(item)
 
     payload = {

@@ -61,7 +61,8 @@ def _bootstrap():
         QMessageBox.warning = staticmethod(lambda *a, **k: 1)
         QMessageBox.critical = staticmethod(lambda *a, **k: 1)
         QMessageBox.information = staticmethod(lambda *a, **k: 1)
-        QMessageBox.question = staticmethod(lambda *a, **k: 1)
+        _yes = getattr(getattr(QMessageBox, "StandardButton", QMessageBox), "Yes", 1)
+        QMessageBox.question = staticmethod(lambda *a, **k: _yes)
 
         init_path = os.path.join(ROOT, "__init__.py")
         spec = importlib.util.spec_from_file_location(

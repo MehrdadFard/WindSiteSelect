@@ -21,7 +21,7 @@ from qgis.PyQt.QtWidgets import (QAction, QMessageBox, QFileDialog, QInputDialog
 from qgis.core import (
     QgsProcessingFeedback,
     QgsProject, QgsRasterLayer, QgsRectangle, QgsCoordinateTransform,
-    QgsWkbTypes, QgsGeometry, QgsVectorLayer, QgsFeature,
+    QgsWkbTypes, QgsGeometry, QgsVectorLayer, QgsFeature, QgsFeatureRequest,
     QgsRasterShader, QgsColorRampShader, QgsSingleBandPseudoColorRenderer, QgsProcessingOutputLayerDefinition,
     QgsDistanceArea, QgsCoordinateReferenceSystem, QgsRasterFileWriter, QgsRasterDataProvider,
     QgsRasterBlock, QgsRasterPipe, QgsField, QgsRasterBandStats, QgsUnitTypes,
@@ -535,6 +535,7 @@ class WindSuitability:
         self.depth_result_path = None
         self.prospect_result_path = None
         self.spatial_filter_result_path = None
+        self._spatial_stale_after_aoi_change = False
         self.spatial_filter_polygons_path = None
         self.spatial_filter_exclude_mask_path = None
         self._gdal_raster_path_cache = {}  # source_abs -> reusable temp/openable path
@@ -840,39 +841,94 @@ class WindSuitability:
         "All files (*.*)"
     )
 
+
+    def _coerce_canonical_results_root(self, path):
+        """
+        Normalize any path under the project output tree to the durable .../results directory.
+
+        Prevents nested trees such as:
+          .../results/runs/.../results/runs/.../results
+        by walking out of runs/, run-id folders, spatial/mca/staging/temp, and nested results.
+        """
+        if not path:
+            return None
+        p = self._normalize_path(path)
+        if not p:
+            return None
+        if os.path.isfile(p):
+            p = os.path.dirname(p)
+        run_like_prefixes = ("run_", "spatial_", "mca_")
+        structural = {"temp", "staging", "spatial", "mca", "vector_criteria", "runs"}
+        for _ in range(64):
+            base = os.path.basename(p).lower() if p else ""
+            parent = os.path.dirname(p) if p else ""
+            if not p or parent == p:
+                break
+            if base in structural:
+                p = parent
+                continue
+            if any(base.startswith(pref) for pref in run_like_prefixes) and os.path.basename(parent).lower() == "runs":
+                p = parent
+                continue
+            if base == "results":
+                walk = parent
+                nested_under_runs = False
+                while walk and os.path.basename(walk):
+                    wb = os.path.basename(walk).lower()
+                    if wb == "runs":
+                        nested_under_runs = True
+                        break
+                    if wb == "results":
+                        break
+                    nxt = os.path.dirname(walk)
+                    if nxt == walk:
+                        break
+                    walk = nxt
+                if nested_under_runs:
+                    p = parent
+                    continue
+                return self._normalize_path(p)
+            break
+        if not p:
+            return None
+        if os.path.basename(p).lower() == "results":
+            return self._normalize_path(p)
+        return self._normalize_path(os.path.join(p, "results"))
+
     def ensure_output_dirs(self, base_path):
         """
         Set output root and create results/temp subdirs. User-selected directory is the root (no extra folder).
         Creates ONLY: output_dir/results and output_dir/temp. No nested subfolders (no wind/, bathymetry/, spatial/, etc.).
         - If base_path is a directory: use it as output_dir.
         - If base_path is a file: use its parent directory as output_dir.
-        - If that directory is named "results" or "temp", go up until we have the true root.
+        - If that directory is named "results", "temp", "runs", or a run subfolder, go up to the true root.
         """
         if not base_path or not str(base_path).strip():
             return
         base_path = os.path.abspath(str(base_path).strip())
-        # Treat as file path if it exists as file, or if it looks like a file (e.g. .tif, .gpkg) so we never use it as output_dir
         looks_like_file = base_path.lower().endswith(('.tif', '.tiff', '.gpkg', '.shp', '.geojson', '.json', '.nc', '.img'))
         if os.path.isfile(base_path) or looks_like_file:
             root = os.path.dirname(base_path)
         else:
             root = base_path
         root = os.path.abspath(root)
-        # Never use .../results or .../temp as output_dir; go up to the user's root
-        while root and os.path.basename(root) in ("results", "temp"):
-            parent = os.path.dirname(root)
-            if parent == root:
-                break
-            root = parent
+        results_root = self._coerce_canonical_results_root(root)
+        if not results_root:
+            return
+        if os.path.basename(results_root).lower() == "results":
+            root = os.path.dirname(results_root)
+        else:
+            root = results_root
+            results_root = self._normalize_path(os.path.join(root, "results"))
         if not root:
             return
         try:
             os.makedirs(root, exist_ok=True)
         except Exception:
             return
-        self.output_dir = root
-        self.results_dir = os.path.join(root, "results")
-        self.temp_dir = os.path.join(root, "temp")
+        self.output_dir = self._normalize_path(root)
+        self.results_dir = self._normalize_path(results_root)
+        self.temp_dir = self._normalize_path(os.path.join(root, "temp"))
         try:
             os.makedirs(self.results_dir, exist_ok=True)
             os.makedirs(self.temp_dir, exist_ok=True)
@@ -904,9 +960,10 @@ class WindSuitability:
             remembered = ""
         remembered = self._normalize_path(remembered) if remembered else None
         if remembered and os.path.isdir(remembered):
-            self.results_dir = remembered
-            parent = os.path.dirname(remembered)
-            if os.path.basename(remembered).lower() == "results" and parent:
+            coerced = self._coerce_canonical_results_root(remembered) or remembered
+            self.results_dir = coerced
+            parent = os.path.dirname(coerced)
+            if os.path.basename(coerced).lower() == "results" and parent:
                 self.output_dir = self._normalize_path(parent)
                 temp_candidate = self._normalize_path(os.path.join(parent, "temp"))
                 if os.path.isdir(temp_candidate) or parent:
@@ -915,7 +972,7 @@ class WindSuitability:
                         os.makedirs(self.temp_dir, exist_ok=True)
                     except Exception:
                         pass
-            return remembered
+            return coerced
         return None
 
     # ------------------------------------------------------------------
@@ -926,21 +983,28 @@ class WindSuitability:
         """Durable results root (output_dir/results). Prefer user output folder; never home UUID dirs."""
         if not (self.results_dir and os.path.isdir(self.results_dir)):
             self._restore_results_root_from_settings()
-        results = self.get_plugin_results_dir()
-        # Prefer an actual .../results directory; avoid treating parent output_dir as the root.
-        if results and os.path.isdir(results):
-            base = os.path.basename(self._normalize_path(results)).lower()
-            if base != "results" and self.results_dir and os.path.isdir(self.results_dir):
-                results = self.results_dir
-            elif base != "results":
-                candidate = self._normalize_path(os.path.join(results, "results"))
-                if os.path.isdir(candidate):
-                    results = candidate
-                    self.results_dir = candidate
+        seed = None
+        if self.results_dir and os.path.isdir(self.results_dir):
+            seed = self.results_dir
+        else:
+            seed = self.get_plugin_results_dir()
+        results = self._coerce_canonical_results_root(seed) if seed else None
+        if results:
             try:
+                os.makedirs(results, exist_ok=True)
                 _rl.ensure_results_layout(results)
             except Exception:
                 pass
+            self.results_dir = self._normalize_path(results)
+            parent = os.path.dirname(results)
+            if parent and os.path.basename(results).lower() == "results":
+                self.output_dir = self._normalize_path(parent)
+                temp_candidate = self._normalize_path(os.path.join(parent, "temp"))
+                self.temp_dir = temp_candidate
+                try:
+                    os.makedirs(self.temp_dir, exist_ok=True)
+                except Exception:
+                    pass
             return self._normalize_path(results)
         # Fallback: plugin data/results under plugin_dir (stable, project-agnostic)
         fallback = self._normalize_path(os.path.join(self.plugin_dir, "data", "results"))
@@ -1247,6 +1311,7 @@ class WindSuitability:
         if durable_excl:
             self.spatial_filter_exclude_mask_path = durable_excl
         self._current_spatial_run_id = run_id
+        self._spatial_stale_after_aoi_change = False
 
         info = {
             "run_id": run_id,
@@ -1272,16 +1337,38 @@ class WindSuitability:
         polys = _rl.path_abs_from_root(root, sf.get("polygons_output")) if sf else None
         excl = _rl.path_abs_from_root(root, sf.get("exclude_mask")) if sf else None
         restored = []
-        if raster and os.path.isfile(raster):
+        refs = sf.get("input_refs") if isinstance(sf.get("input_refs"), dict) else {}
+        # Do not restore a previous AOI's master as the current session master.
+        aoi = self.get_user_aoi_layer()
+        stored_aoi = refs.get("aoi_identity")
+        current_aoi = self._aoi_identity_token(aoi) if aoi else None
+        spatial_ok_for_current_aoi = True
+        if aoi and aoi.isValid() and aoi.featureCount() > 0 and raster and os.path.isfile(raster):
+            spatial_ok_for_current_aoi = self._spatial_raster_belongs_to_current_aoi(
+                raster, manifest=data, aoi_layer=aoi
+            )
+        elif stored_aoi and current_aoi and stored_aoi != current_aoi:
+            spatial_ok_for_current_aoi = False
+        if not spatial_ok_for_current_aoi:
+            self._spatial_stale_after_aoi_change = True
+            self.spatial_filter_result_path = None
+            self.spatial_filter_polygons_path = None
+            self.spatial_filter_exclude_mask_path = None
+            QgsMessageLog.logMessage(
+                "[WindSuitability] Manifest spatial outputs not restored: AOI mismatch "
+                "(stored={0}, current={1}).".format(stored_aoi, current_aoi),
+                "WindSuitability",
+                Qgis.Warning,
+            )
+        if spatial_ok_for_current_aoi and raster and os.path.isfile(raster):
             self.spatial_filter_result_path = raster
             restored.append("spatial_filter_result_path")
-        if polys and os.path.isfile(polys):
+        if spatial_ok_for_current_aoi and polys and os.path.isfile(polys):
             self.spatial_filter_polygons_path = polys
             restored.append("spatial_filter_polygons_path")
-        if excl and os.path.isfile(excl):
+        if spatial_ok_for_current_aoi and excl and os.path.isfile(excl):
             self.spatial_filter_exclude_mask_path = excl
         # Restore analysis master paths from spatial input_refs when present
-        refs = sf.get("input_refs") if isinstance(sf.get("input_refs"), dict) else {}
         for key, attr in (
             ("wind_master", "wind_master_path"),
             ("wind_result", "wind_result_path"),
@@ -1760,7 +1847,7 @@ class WindSuitability:
         so only the next geometry is used in analysis.
         """
         self._remove_user_aoi_layers_from_project()
-        self._clear_transient_proximity_state(remove_layers=True)
+        self._invalidate_spatial_outputs_for_aoi_change(reason="new_aoi_definition")
         self.clear_rubber_band()
         self.current_aoi = None
         self.user_aoi_layer = None
@@ -1769,6 +1856,65 @@ class WindSuitability:
         self.aoi_extent = None
         self.analysis_crs = None
         self.invalidate_all_excluded_layer_caches()
+
+
+    def _invalidate_spatial_outputs_for_aoi_change(self, reason="aoi_changed"):
+        """
+        Mark previous Spatial Filtering / MCA session outputs as stale after AOI change.
+
+        Does not delete durable run files on disk. Clears in-memory pointers so Proximity
+        cannot silently reuse a geographically unrelated spatial_filtered.tif alias.
+        """
+        prev_spatial = getattr(self, "spatial_filter_result_path", None)
+        self.spatial_filter_result_path = None
+        self.spatial_filter_polygons_path = None
+        self.spatial_filter_exclude_mask_path = None
+        self._current_spatial_run_id = None
+        self.mca_output_dir = None
+        self._current_mca_run_id = None
+        self._spatial_stale_after_aoi_change = True
+        try:
+            self._clear_transient_proximity_state(remove_layers=True)
+        except Exception:
+            pass
+        QgsMessageLog.logMessage(
+            "[WindSuitability] Invalidated Spatial Filtering session state ({0}). "
+            "Previous master was: {1}".format(reason, prev_spatial or "None"),
+            "WindSuitability",
+            Qgis.Info,
+        )
+
+    def _manifest_aoi_identity(self, manifest=None):
+        try:
+            data = manifest
+            if data is None:
+                data, _err = self._load_current_run_manifest()
+            sf = (data or {}).get("spatial_filter") or {}
+            refs = sf.get("input_refs") if isinstance(sf.get("input_refs"), dict) else {}
+            return refs.get("aoi_identity")
+        except Exception:
+            return None
+
+    def _spatial_raster_belongs_to_current_aoi(self, raster_path, manifest=None, aoi_layer=None):
+        """
+        True when raster_path is spatially consistent with the current AOI and, when
+        available, matches the AOI identity stored for the current spatial run.
+        """
+        aoi = aoi_layer or self.get_user_aoi_layer()
+        if not aoi or not aoi.isValid() or aoi.featureCount() <= 0:
+            return False
+        path = self._normalize_path(raster_path)
+        if not path or not os.path.isfile(path):
+            return False
+        current_token = self._aoi_identity_token(aoi)
+        stored_token = self._manifest_aoi_identity(manifest)
+        if stored_token and current_token and stored_token != current_token:
+            return False
+        layer = QgsRasterLayer(path, "SpatialBelongCheck", "gdal")
+        if not layer.isValid():
+            return False
+        diagnosis = self._diagnose_aoi_master_overlap(layer, aoi_layer=aoi)
+        return diagnosis.get("status") == "ok"
 
     def _clear_transient_proximity_state(self, remove_layers=False):
         """
@@ -2545,6 +2691,14 @@ class WindSuitability:
             btn_add_from_file = getattr(self.dlg, 'btn_add_layer_from_file', None)
             if btn_add_from_file is not None:
                 btn_add_from_file.clicked.connect(self.add_layer_from_file_to_weights_table)
+            self._ensure_add_vector_criterion_button()
+            btn_add_vector = getattr(self.dlg, 'btn_add_vector_criterion', None)
+            if btn_add_vector is not None:
+                try:
+                    btn_add_vector.clicked.disconnect()
+                except Exception:
+                    pass
+                btn_add_vector.clicked.connect(self.add_vector_criterion_from_file)
             self.dlg.btn_remove_layer_from_table.clicked.connect(self.remove_layer_from_weights_table)
             self.dlg.btn_normalize_weights.clicked.connect(self.normalize_weights)
             self.dlg.btn_validate_criteria.clicked.connect(self.validate_criteria)
@@ -2663,20 +2817,65 @@ class WindSuitability:
         self.add_basemap()
         self.dlg.show()
 
+    def _ensure_add_vector_criterion_button(self):
+        """Ensure Add Vector Criterion exists even if an older .ui is loaded."""
+        if not self.dlg:
+            return
+        if getattr(self.dlg, "btn_add_vector_criterion", None) is not None:
+            return
+        layout = getattr(self.dlg, "verticalLayout_weights_buttons", None)
+        if layout is None:
+            return
+        try:
+            btn = QPushButton(self.tr("Add Vector Criterion..."))
+            btn.setObjectName("btn_add_vector_criterion")
+            btn.setMinimumWidth(150)
+            btn.setToolTip(
+                self.tr(
+                    "Browse for a vector file (GPKG, SHP, GeoJSON, …) and convert it "
+                    "to an MCA criterion via Binary or Proximity analysis."
+                )
+            )
+            # Insert after Add Raster Criterion when possible
+            insert_at = layout.count()
+            raster_btn = getattr(self.dlg, "btn_add_layer_from_file", None)
+            if raster_btn is not None:
+                for i in range(layout.count()):
+                    item = layout.itemAt(i)
+                    if item and item.widget() is raster_btn:
+                        insert_at = i + 1
+                        break
+            layout.insertWidget(insert_at, btn)
+            self.dlg.btn_add_vector_criterion = btn
+        except Exception:
+            pass
+
     def _configure_decision_making_ux(self):
         """Apply Decision Making button labels, tooltips, and MCA workflow guidance."""
         if not self.dlg:
             return
+        self._ensure_add_vector_criterion_button()
         specs = (
             (
                 "btn_add_layer_to_table",
-                self.tr("Add Layer"),
-                self.tr("Add a raster layer already loaded in the current QGIS project as an MCA criterion."),
+                self.tr("Add Layer from Map"),
+                self.tr(
+                    "Add a raster or vector layer already loaded in the current QGIS project "
+                    "as an MCA criterion. Vectors require Binary or Proximity analysis."
+                ),
             ),
             (
                 "btn_add_layer_from_file",
                 self.tr("Add Raster Criterion..."),
                 self.tr("Browse for a raster file and add it as a new MCA criterion."),
+            ),
+            (
+                "btn_add_vector_criterion",
+                self.tr("Add Vector Criterion..."),
+                self.tr(
+                    "Browse for a vector file (GPKG, SHP, GeoJSON, …) and convert it "
+                    "to an MCA criterion via Binary or Proximity analysis."
+                ),
             ),
             (
                 "btn_remove_layer_from_table",
@@ -2713,16 +2912,23 @@ class WindSuitability:
                 btn.setToolTip(tip)
             except Exception:
                 pass
-        lbl_cfg = getattr(self.dlg, "lbl_criteria_configuration", None)
-        if lbl_cfg is not None:
-            try:
-                lbl_cfg.setText(self.tr("Criteria Configuration"))
-            except Exception:
-                pass
+        for lbl_name, lbl_text in (
+            ("lbl_add_criteria", self.tr("Add Criteria")),
+            ("lbl_manage_criteria", self.tr("Manage Criteria")),
+            ("lbl_criteria_configuration", self.tr("Criteria Configuration")),
+            ("lbl_mca_analysis_actions", self.tr("Analysis")),
+        ):
+            lbl = getattr(self.dlg, lbl_name, None)
+            if lbl is not None:
+                try:
+                    lbl.setText(lbl_text)
+                except Exception:
+                    pass
         hint = getattr(self.dlg, "lbl_mca_workflow_hint", None)
         workflow = self.tr(
             "Workflow: Complete Prospect Analysis and Spatial Filtering first, "
-            "then generate the MCA analysis grid and run MCA."
+            "then generate the MCA analysis grid and run MCA. "
+            "Vector criteria use Binary (presence) or Proximity (distance) conversion onto the master grid."
         )
         if hint is not None:
             try:
@@ -3631,6 +3837,235 @@ class WindSuitability:
             "No master reference raster found. Complete Spatial Filtering first so criteria "
             "can be aligned to the current analysis grid, then generate the MCA grid and run the analysis."
         )
+
+    def _proximity_prerequisite_error_message(self):
+        return self.tr(
+            "A valid AOI and analysis reference grid are required before Proximity Analysis "
+            "can be generated. Define the AOI and complete the required Spatial Filtering "
+            "workflow first."
+        )
+
+    def _require_proximity_analysis_context(self):
+        """
+        Gate Proximity Analysis: require a live AOI and the current spatial_filtered master grid.
+        Does not invent extent from canvas/project/vector alone or from unrelated old rasters.
+        Returns (ref_layer, ref_path, aoi_layer) or raises RuntimeError with an actionable message.
+        """
+        aoi = self.get_user_aoi_layer()
+        if not aoi or not aoi.isValid() or aoi.featureCount() <= 0:
+            raise RuntimeError(self._proximity_prerequisite_error_message())
+
+        # Detect AOI change before resolving the master. Resolve may clear a stale
+        # alias/session pointer, which would otherwise collapse into a generic
+        # "missing master" error instead of an actionable AOI-changed message.
+        current_aoi_token = self._aoi_identity_token(aoi)
+        stored_aoi_token = self._manifest_aoi_identity()
+        aoi_changed = bool(
+            getattr(self, "_spatial_stale_after_aoi_change", False)
+            or (stored_aoi_token and current_aoi_token and stored_aoi_token != current_aoi_token)
+        )
+        stale_hint_path = (
+            getattr(self, "spatial_filter_result_path", None)
+            or self._normalize_path(
+                os.path.join(self.get_canonical_results_root() or "", self.SPATIAL_FILTERED_TIF)
+            )
+        )
+        if aoi_changed:
+            raise RuntimeError(
+                self.tr(
+                    "The Area of Interest has changed. Please run Spatial Filtering again for the "
+                    "current AOI before adding Proximity criteria.\n\n"
+                    "Previous/selected master grid:\n{0}"
+                ).format(stale_hint_path or "(unavailable)")
+            )
+
+        master_layer, master_path, master_name = self.get_master_reference_raster_for_decision_making()
+        if not master_layer or not master_layer.isValid() or not master_path or not os.path.exists(master_path):
+            # Resolve may have rejected a geographically disjoint alias/session master.
+            # Prefer an actionable AOI/master message over a generic missing-master error.
+            candidate = None
+            try:
+                data, _err = self._load_current_run_manifest()
+            except Exception:
+                data = None
+            try:
+                root = self.get_canonical_results_root()
+            except Exception:
+                root = None
+            if data and root:
+                sf = (data or {}).get("spatial_filter") or {}
+                candidate = _rl.path_abs_from_root(root, sf.get("raster_output"), confine=True)
+            if (not candidate or not os.path.isfile(candidate)) and root:
+                candidate = self._normalize_path(os.path.join(root, self.SPATIAL_FILTERED_TIF))
+            if candidate and os.path.isfile(candidate):
+                cand_layer = QgsRasterLayer(candidate, "RejectedMasterCheck", "gdal")
+                if cand_layer.isValid():
+                    diagnosis = self._diagnose_aoi_master_overlap(cand_layer, aoi_layer=aoi)
+                    if diagnosis.get("status") != "ok":
+                        raise RuntimeError(
+                            self.tr(
+                                "The Area of Interest has changed or the selected Spatial Filtering "
+                                "master grid belongs to a different analysis area. Please run Spatial "
+                                "Filtering again for the current AOI before adding Proximity criteria."
+                                "\n\n{0}"
+                            ).format(diagnosis.get("message") or "")
+                        )
+            raise RuntimeError(self._proximity_prerequisite_error_message())
+
+        # Prefer Spatial Filtering output as the authoritative current-run grid.
+        if master_name != self.SPATIAL_FILTERED_TIF:
+            # Prospect/wind alone are not sufficient for proximity without Spatial Filtering.
+            raise RuntimeError(self._proximity_prerequisite_error_message())
+
+        analysis_crs = QgsCoordinateReferenceSystem(PROJECT_CRS_METRIC)
+        if not analysis_crs.isValid() or master_layer.crs().authid() != analysis_crs.authid():
+            raise RuntimeError(
+                self.tr(
+                    "Proximity Analysis requires a projected metric analysis CRS ({0}). "
+                    "Re-run Spatial Filtering so the master grid uses that CRS."
+                ).format(PROJECT_CRS_METRIC)
+            )
+
+        diagnosis = self._diagnose_aoi_master_overlap(master_layer, aoi_layer=aoi)
+        status = diagnosis.get("status")
+        if status == "crs_error":
+            raise RuntimeError(
+                self.tr(
+                    "Proximity Analysis cannot verify AOI/master overlap because of a CRS problem:\n{0}"
+                ).format(diagnosis.get("message") or "CRS transformation failed")
+            )
+        if status != "ok":
+            # Geographically disjoint master usually means a stale flat alias / previous AOI run.
+            raise RuntimeError(
+                self.tr(
+                    "The Area of Interest has changed or the selected Spatial Filtering master grid "
+                    "belongs to a different analysis area. Please run Spatial Filtering again for the "
+                    "current AOI before adding Proximity criteria.\n\n{0}"
+                ).format(diagnosis.get("message") or "")
+            )
+
+        return master_layer, self._normalize_path(master_path), aoi
+
+    def _vector_criteria_output_dir(self):
+        """Unique per-run directory for derived vector Binary/Proximity criteria."""
+        base = self.get_mca_output_directory()
+        if base and os.path.isfile(base):
+            base = os.path.dirname(base)
+        if not base or not os.path.isdir(base):
+            root = self.get_canonical_results_root() if hasattr(self, "get_canonical_results_root") else None
+            if root and os.path.isdir(root):
+                base = os.path.join(root, "runs", _rl.new_run_id("mca"), "mca")
+            else:
+                base = self.get_plugin_temp_dir()
+        out = self._normalize_path(os.path.join(base, "vector_criteria"))
+        os.makedirs(out, exist_ok=True)
+        return out
+
+    def _aoi_identity_token(self, aoi_layer=None):
+        """
+        Deterministic fingerprint of the current AOI geometry.
+
+        Includes CRS, extent, feature count, and a geometry hash so edits to the
+        same layer (or switching AOI layers) invalidate prior Spatial Filtering.
+        """
+        ul = aoi_layer or self.get_user_aoi_layer()
+        if not ul or not ul.isValid():
+            return None
+        try:
+            ext = ul.extent()
+            crs = ul.crs().authid() if ul.crs().isValid() else ""
+            geoms = []
+            for feat in ul.getFeatures():
+                g = feat.geometry()
+                if g and not g.isEmpty():
+                    geoms.append(QgsGeometry(g))
+            geom_hash = "empty"
+            if geoms:
+                try:
+                    union = QgsGeometry.unaryUnion(geoms) if len(geoms) > 1 else QgsGeometry(geoms[0])
+                except Exception:
+                    union = QgsGeometry(geoms[0])
+                try:
+                    wkt = union.asWkt()
+                except Exception:
+                    wkt = "{0}:{1}".format(union.boundingBox().toString(), len(geoms))
+                geom_hash = hashlib.sha256(wkt.encode("utf-8")).hexdigest()[:16]
+            return "{0}|{1:.3f},{2:.3f},{3:.3f},{4:.3f}|n={5}|g={6}".format(
+                crs,
+                float(ext.xMinimum()),
+                float(ext.yMinimum()),
+                float(ext.xMaximum()),
+                float(ext.yMaximum()),
+                int(ul.featureCount()),
+                geom_hash,
+            )
+        except Exception:
+            return None
+
+    def _validate_proximity_suitability_masked_to_aoi(
+        self, suitability_path, reference_raster_path, aoi_layer=None
+    ):
+        """
+        Ensure suitability matches the master grid and that every cell outside the AOI is NoData,
+        with at least one finite value inside the AOI.
+        Returns (True, None) or (False, error).
+        """
+        if not _GDAL_AVAILABLE or not _NUMPY_AVAILABLE:
+            return False, "GDAL/NumPy required to validate AOI-masked proximity output"
+        sp = self._normalize_path(suitability_path)
+        rp = self._normalize_path(reference_raster_path)
+        if not sp or not os.path.isfile(sp) or not rp or not os.path.isfile(rp):
+            return False, "suitability or reference raster missing"
+        if not self._rasters_have_identical_grid(sp, rp):
+            return False, "proximity suitability grid does not match the authoritative master grid"
+        info = self._get_reference_raster_info(rp)
+        if not info:
+            return False, "could not read master grid info"
+        mask_path = os.path.join(
+            tempfile.gettempdir(), "prox_aoi_validate_mask_{}.tif".format(uuid.uuid4().hex[:8])
+        )
+        try:
+            if not self._rasterize_user_aoi_binary_mask(rp, mask_path, ref_info=info):
+                return False, "failed to rasterize current AOI for proximity validation"
+            ds_s = gdal.Open(sp, gdal.GA_ReadOnly)
+            ds_m = gdal.Open(self._normalize_path(mask_path), gdal.GA_ReadOnly)
+            if not ds_s or not ds_m:
+                return False, "could not open suitability/AOI mask for validation"
+            S = np.asarray(ds_s.GetRasterBand(1).ReadAsArray(), dtype=np.float64)
+            M = np.asarray(ds_m.GetRasterBand(1).ReadAsArray(), dtype=np.float64)
+            nd = ds_s.GetRasterBand(1).GetNoDataValue()
+            if nd is None:
+                nd = MCA_NODATA
+            ds_s = None
+            ds_m = None
+            outside = M <= 0
+            inside = M > 0
+            if not np.any(inside):
+                return False, "AOI mask has no interior cells on the master grid"
+            # Outside AOI must be NoData (or non-finite)
+            outside_vals = S[outside]
+            if outside_vals.size:
+                bad_outside = np.isfinite(outside_vals) & (outside_vals != nd)
+                # Also treat near-equality for float NoData
+                bad_outside = bad_outside & (np.abs(outside_vals - float(nd)) > 1e-6)
+                if np.any(bad_outside):
+                    return False, (
+                        "proximity suitability contains valid values outside the AOI "
+                        "({} cells)".format(int(np.count_nonzero(bad_outside)))
+                    )
+            inside_vals = S[inside]
+            finite_inside = inside_vals[np.isfinite(inside_vals) & (np.abs(inside_vals - float(nd)) > 1e-6)]
+            if finite_inside.size == 0:
+                return False, "no finite proximity suitability values inside the AOI"
+            return True, None
+        except Exception as e:
+            return False, str(e)
+        finally:
+            try:
+                if os.path.exists(mask_path):
+                    os.remove(mask_path)
+            except Exception:
+                pass
 
     def _rasterize_vector_to_reference_grid(self, vector_path, reference_raster_path, output_raster_path, burn_value=1.0, layer_name=None, ref_info=None):
         """
@@ -4744,27 +5179,159 @@ class WindSuitability:
         except Exception:
             return None
 
+    def _diagnose_aoi_master_overlap(self, ref_layer, aoi_layer=None):
+        """
+        CRS-aware AOI vs master-raster spatial relationship.
+
+        Returns dict with keys:
+          status: 'ok' | 'missing_aoi' | 'missing_raster' | 'crs_error' | 'no_overlap'
+          message: human-readable detail
+        Uses transformed AOI geometry (not raw untransformed coordinates).
+        """
+        ul = aoi_layer or self.get_user_aoi_layer()
+        if not ul or not ul.isValid() or ul.featureCount() <= 0:
+            return {
+                "status": "missing_aoi",
+                "message": "No valid current AOI is defined.",
+            }
+        if not ref_layer or not ref_layer.isValid():
+            return {
+                "status": "missing_raster",
+                "message": "Master/reference raster is missing or invalid.",
+            }
+        aoi_crs = ul.crs()
+        raster_crs = ref_layer.crs()
+        if not aoi_crs.isValid():
+            return {
+                "status": "crs_error",
+                "message": "AOI layer CRS is invalid; cannot compare against the master grid.",
+                "aoi_crs": "",
+                "raster_crs": raster_crs.authid() if raster_crs.isValid() else "",
+            }
+        if not raster_crs.isValid():
+            return {
+                "status": "crs_error",
+                "message": "Master raster CRS is invalid; cannot compare against the AOI.",
+                "aoi_crs": aoi_crs.authid(),
+                "raster_crs": "",
+            }
+
+        geoms = []
+        for feat in ul.getFeatures():
+            g = feat.geometry()
+            if g and not g.isEmpty():
+                geoms.append(QgsGeometry(g))
+        if not geoms:
+            return {
+                "status": "missing_aoi",
+                "message": "AOI layer has no usable geometries.",
+                "aoi_crs": aoi_crs.authid(),
+                "raster_crs": raster_crs.authid(),
+            }
+        try:
+            aoi_geom = QgsGeometry.unaryUnion(geoms) if len(geoms) > 1 else QgsGeometry(geoms[0])
+        except Exception:
+            aoi_geom = QgsGeometry(geoms[0])
+            for g in geoms[1:]:
+                try:
+                    aoi_geom = aoi_geom.combine(g)
+                except Exception:
+                    pass
+        if not aoi_geom or aoi_geom.isEmpty():
+            return {
+                "status": "missing_aoi",
+                "message": "AOI geometry is empty after union.",
+                "aoi_crs": aoi_crs.authid(),
+                "raster_crs": raster_crs.authid(),
+            }
+
+        context = QgsProject.instance().transformContext()
+        if aoi_crs.authid() != raster_crs.authid():
+            try:
+                tr = QgsCoordinateTransform(aoi_crs, raster_crs, context)
+                xform_result = aoi_geom.transform(tr)
+                success = getattr(QgsGeometry, "TransformResult", None)
+                if success is not None and xform_result != success.Success:
+                    return {
+                        "status": "crs_error",
+                        "message": (
+                            "CRS transformation of the AOI into the master raster CRS failed "
+                            "(AOI {0} → raster {1}).".format(aoi_crs.authid(), raster_crs.authid())
+                        ),
+                        "aoi_crs": aoi_crs.authid(),
+                        "raster_crs": raster_crs.authid(),
+                    }
+            except Exception as ex:
+                return {
+                    "status": "crs_error",
+                    "message": (
+                        "CRS transformation failed while comparing AOI to master grid.\n"
+                        "AOI CRS: {0}\nMaster CRS: {1}\nError: {2}".format(
+                            aoi_crs.authid(), raster_crs.authid(), ex
+                        )
+                    ),
+                    "aoi_crs": aoi_crs.authid(),
+                    "raster_crs": raster_crs.authid(),
+                }
+
+        raster_rect = ref_layer.extent()
+        raster_geom = QgsGeometry.fromRect(raster_rect)
+        aoi_bb = aoi_geom.boundingBox()
+        overlaps = False
+        try:
+            overlaps = bool(aoi_geom.intersects(raster_geom)) or bool(aoi_bb.intersects(raster_rect))
+        except Exception:
+            overlaps = bool(aoi_bb.intersects(raster_rect))
+
+        detail = {
+            "aoi_crs": aoi_crs.authid(),
+            "raster_crs": raster_crs.authid(),
+            "aoi_extent": aoi_bb.toString() if aoi_bb else "",
+            "raster_extent": raster_rect.toString() if raster_rect else "",
+            "raster_path": self._normalize_path(ref_layer.source()) if hasattr(ref_layer, "source") else "",
+        }
+        if overlaps:
+            detail["status"] = "ok"
+            detail["message"] = "AOI intersects master raster footprint after CRS alignment."
+            return detail
+
+        detail["status"] = "no_overlap"
+        detail["message"] = (
+            "Transformed AOI geometry does not intersect the master raster footprint.\n"
+            "AOI CRS: {0}\nMaster CRS: {1}\n"
+            "AOI extent (in master CRS): {2}\n"
+            "Master extent: {3}\n"
+            "Master path: {4}".format(
+                detail["aoi_crs"],
+                detail["raster_crs"],
+                detail["aoi_extent"],
+                detail["raster_extent"],
+                detail["raster_path"],
+            )
+        )
+        return detail
+
     def _reference_raster_overlaps_user_aoi(self, ref_layer):
         """
-        True if ref_layer's extent intersects the user AOI extent transformed to ref CRS.
+        True if the user AOI intersects ref_layer after transforming AOI geometry into ref CRS.
         If there is no valid user AOI, returns True (no constraint).
+        CRS transformation failures are treated as non-overlap for callers that only need a bool;
+        use _diagnose_aoi_master_overlap for actionable CRS vs geometry diagnostics.
         """
-        ul = self.get_user_aoi_layer()
-        if not ul or not ul.isValid() or ul.featureCount() == 0:
+        diagnosis = self._diagnose_aoi_master_overlap(ref_layer)
+        status = diagnosis.get("status")
+        if status == "missing_aoi":
             return True
-        if not ref_layer or not ref_layer.isValid():
+        if status == "ok":
             return True
-        try:
-            tr = QgsCoordinateTransform(ul.crs(), ref_layer.crs(), QgsProject.instance())
-            aoi_bb = tr.transformBoundingBox(ul.extent())
-            return aoi_bb.intersects(ref_layer.extent())
-        except Exception as ex:
+        if status == "crs_error":
             QgsMessageLog.logMessage(
-                "[WindSuitability] AOI vs reference overlap check failed: {}".format(ex),
+                "[WindSuitability] AOI vs reference CRS check failed: {}".format(diagnosis.get("message")),
                 "WindSuitability",
                 Qgis.Warning,
             )
-            return True
+            return False
+        return False
 
     def _rasterize_user_aoi_binary_mask(self, reference_raster_path, output_raster_path, ref_info=None):
         """
@@ -5007,7 +5574,8 @@ class WindSuitability:
         """
         Resolve the current spatial-filter result identity as a pair.
 
-        Authoritative order: session → confined manifest → logged alias fallback.
+        Authoritative order: session → confined manifest (runs/) → logged alias fallback.
+        Rejects session/alias rasters that do not belong to the current AOI.
         Never silently picks files beside the prospect raster.
         """
         root = None
@@ -5020,12 +5588,41 @@ class WindSuitability:
             data, _err = self._load_current_run_manifest()
         except Exception:
             data = None
+
+        # If AOI changed, ignore in-memory session pointers until Spatial Filtering republishes.
+        session_raster = getattr(self, "spatial_filter_result_path", None)
+        session_polygons = getattr(self, "spatial_filter_polygons_path", None)
+        if getattr(self, "_spatial_stale_after_aoi_change", False):
+            session_raster = None
+            session_polygons = None
+
         out = _rl.resolve_authoritative_spatial_paths(
             root or "",
-            session_raster=getattr(self, "spatial_filter_result_path", None),
-            session_polygons=getattr(self, "spatial_filter_polygons_path", None),
+            session_raster=session_raster,
+            session_polygons=session_polygons,
             manifest=data,
         )
+
+        # Prefer run-specific manifest raster over flat alias when both exist and session empty.
+        # resolve_authoritative already prefers session then manifest then alias.
+
+        aoi = self.get_user_aoi_layer()
+        if out.get("raster") and aoi and aoi.isValid() and aoi.featureCount() > 0:
+            if not self._spatial_raster_belongs_to_current_aoi(out["raster"], manifest=data, aoi_layer=aoi):
+                QgsMessageLog.logMessage(
+                    "[WindSuitability] Rejected spatial master that does not belong to the current AOI: "
+                    "{} (source={})".format(out.get("raster"), out.get("source")),
+                    "WindSuitability",
+                    Qgis.Warning,
+                )
+                out["notes"].append("rejected_aoi_mismatch")
+                out["raster"] = None
+                out["polygons"] = None
+                out["source"] = None
+                out["alias_used"] = False
+                self.spatial_filter_result_path = None
+                self.spatial_filter_polygons_path = None
+
         if out.get("raster") and out.get("source") in (
             "manifest",
             "session",
@@ -5057,6 +5654,7 @@ class WindSuitability:
                 Qgis.Warning,
             )
         return out
+
 
     def _resolve_final_suitable_mask_raster_path(self):
         """Path to spatial_filtered.tif (byte mask: 1 = final suitable area)."""
@@ -6279,6 +6877,7 @@ class WindSuitability:
                 "prospect_raster": prospect_path,
                 "wind_master": getattr(self, "wind_master_path", None),
                 "wind_result": getattr(self, "wind_result_path", None),
+                "aoi_identity": self._aoi_identity_token(user_aoi_layer),
             },
             run_dirs=run_dirs,
         )
@@ -7286,6 +7885,164 @@ class WindSuitability:
         except Exception as e:
             return None, False, f"Error during reprojection: {str(e)}"
 
+    def _vector_intersects_raster_extent(self, layer, raster_extent, raster_crs):
+        """
+        Efficiently test whether any vector geometry intersects the analysis raster extent.
+
+        Uses a provider spatial filter (QgsFeatureRequest.setFilterRect) after transforming
+        the raster footprint into the vector CRS. Exact intersection is evaluated in the
+        raster CRS. Does NOT treat an arbitrary first-N sample as representative.
+
+        Returns:
+            (True, info_dict) on success, where info_dict includes candidates_checked.
+            (False, error_message) distinguishing empty/invalid, CRS failure, and true miss.
+        """
+        if not layer or not layer.isValid():
+            return False, "Vector layer is invalid."
+        feature_count = int(layer.featureCount() or 0)
+        if feature_count <= 0:
+            return False, "Vector layer has zero features."
+        if raster_extent is None or raster_extent.isEmpty() or raster_extent.isNull():
+            return False, "Raster extent is empty or invalid."
+        if not raster_crs or not raster_crs.isValid():
+            return False, "Raster CRS is invalid; cannot validate spatial intersection."
+
+        layer_crs = layer.crs()
+        if not layer_crs.isValid():
+            return False, (
+                "Vector layer CRS is invalid; cannot transform/filter features against the "
+                "analysis raster extent."
+            )
+
+        raster_rect = QgsRectangle(raster_extent)
+        raster_geom = QgsGeometry.fromRect(raster_rect)
+
+        # Filter rectangle must be expressed in the vector layer CRS.
+        filter_rect = QgsRectangle(raster_rect)
+        to_raster = None
+        if layer_crs.authid() != raster_crs.authid():
+            try:
+                to_layer = QgsCoordinateTransform(
+                    raster_crs, layer_crs, QgsProject.instance().transformContext()
+                )
+                filter_rect = to_layer.transformBoundingBox(raster_rect)
+                to_raster = QgsCoordinateTransform(
+                    layer_crs, raster_crs, QgsProject.instance().transformContext()
+                )
+            except Exception as transform_err:
+                return False, (
+                    "CRS transformation failed while preparing the spatial intersection check.\n"
+                    "Vector CRS: {0}\nRaster CRS: {1}\nError: {2}".format(
+                        layer_crs.authid(), raster_crs.authid(), transform_err
+                    )
+                )
+            if filter_rect.isEmpty() or filter_rect.isNull():
+                return False, (
+                    "CRS transformation produced an empty filter extent.\n"
+                    "Vector CRS: {0}\nRaster CRS: {1}".format(
+                        layer_crs.authid(), raster_crs.authid()
+                    )
+                )
+
+        request = QgsFeatureRequest().setFilterRect(filter_rect)
+        # Prefer geometries only; avoid loading all attributes for large layers.
+        try:
+            request.setSubsetOfAttributes([])
+        except Exception:
+            pass
+
+        candidates_checked = 0
+        try:
+            iterator = layer.getFeatures(request)
+        except Exception as req_err:
+            return False, (
+                "Spatial feature request failed while searching for intersecting geometries.\n"
+                "Error: {0}".format(req_err)
+            )
+
+        for feature in iterator:
+            geom = feature.geometry()
+            if not geom or geom.isEmpty():
+                continue
+            candidates_checked += 1
+            try:
+                geom_raster = QgsGeometry(geom)
+                if to_raster is not None:
+                    xform_result = geom_raster.transform(to_raster)
+                    success = getattr(QgsGeometry, "TransformResult", None)
+                    if success is not None and xform_result != success.Success:
+                        continue
+                # Exact geometry intersection in raster CRS (not sample/FID order).
+                if geom_raster.intersects(raster_geom):
+                    return True, {
+                        "candidates_checked": candidates_checked,
+                        "feature_count": feature_count,
+                        "used_spatial_filter": True,
+                    }
+            except Exception:
+                continue
+
+        # Fallback when the provider ignores filterRect but layer extent overlaps:
+        # scan with early-exit using bbox in layer CRS first (still not "first 100 only").
+        layer_extent = layer.extent()
+        layer_extent_in_raster = QgsRectangle(layer_extent)
+        if layer_crs.authid() != raster_crs.authid():
+            try:
+                layer_extent_in_raster = to_raster.transformBoundingBox(layer_extent)
+            except Exception as transform_err:
+                return False, (
+                    "CRS transformation failed while comparing layer/raster extents.\n"
+                    "Vector CRS: {0}\nRaster CRS: {1}\nError: {2}".format(
+                        layer_crs.authid(), raster_crs.authid(), transform_err
+                    )
+                )
+
+        if candidates_checked == 0 and layer_extent_in_raster.intersects(raster_rect):
+            # Provider may not honor setFilterRect — fall back to full scan with early exit.
+            for feature in layer.getFeatures():
+                geom = feature.geometry()
+                if not geom or geom.isEmpty():
+                    continue
+                candidates_checked += 1
+                try:
+                    geom_raster = QgsGeometry(geom)
+                    if to_raster is not None:
+                        xform_result = geom_raster.transform(to_raster)
+                        success = getattr(QgsGeometry, "TransformResult", None)
+                        if success is not None and xform_result != success.Success:
+                            continue
+                    if geom_raster.boundingBox().intersects(raster_rect) and geom_raster.intersects(raster_geom):
+                        return True, {
+                            "candidates_checked": candidates_checked,
+                            "feature_count": feature_count,
+                            "used_spatial_filter": False,
+                            "fallback_full_scan": True,
+                        }
+                except Exception:
+                    continue
+
+        return False, (
+            "No spatial intersection found between vector geometries and the analysis raster extent.\n"
+            "Layer: '{0}'\n"
+            "Feature count: {1}\n"
+            "Spatial candidates examined: {2}\n"
+            "Vector extent: {3}\n"
+            "Raster extent: {4}\n"
+            "Vector CRS: {5}\n"
+            "Raster CRS: {6}\n"
+            "Note: a vector bounding box that contains the raster does not imply any feature "
+            "intersects it; candidates were selected with a spatial filter, not an arbitrary "
+            "first-N sample.".format(
+                layer.name() if hasattr(layer, "name") else "vector",
+                feature_count,
+                candidates_checked,
+                layer.extent().toString(),
+                raster_extent.toString(),
+                layer_crs.authid(),
+                raster_crs.authid(),
+            )
+        )
+
     def validate_vector_for_rasterization(self, layer, raster_extent, crs):
         """
         Mandatory pre-rasterization validation guard.
@@ -7334,50 +8091,36 @@ class WindSuitability:
                 f"Vector layer validation failed: Layer '{layer.name()}' has Null geometry type.\n"
                 f"Cannot rasterize layers without geometry."
             )
-        
-        # Verify at least ONE geometry intersects raster extent
-        raster_rect = QgsRectangle(
-            raster_extent.xMinimum(),
-            raster_extent.yMinimum(),
-            raster_extent.xMaximum(),
-            raster_extent.yMaximum()
-        )
-        
-        has_intersection = False
-        checked_features = 0
-        max_check = min(100, feature_count)  # Check up to 100 features
-        
-        for feature in layer.getFeatures():
-            if checked_features >= max_check:
-                break
-            checked_features += 1
-            geom = feature.geometry()
-            if geom and not geom.isEmpty():
-                feat_bbox = geom.boundingBox()
-                if feat_bbox.intersects(raster_rect):
-                    has_intersection = True
-                    break
-        
-        if not has_intersection:
-            raise RuntimeError(
-                f"Vector layer validation failed: No spatial intersection found.\n"
-                f"Layer: '{layer.name()}'\n"
-                f"Geometry type: {geometry_type_str}\n"
-                f"Feature count: {feature_count}\n"
-                f"Checked features: {checked_features}\n"
-                f"Vector extent: {layer.extent().toString()}\n"
-                f"Raster extent: {raster_extent.toString()}\n"
-                f"Cannot rasterize: vector features do not intersect raster extent."
-            )
-        
-        # Verify CRS matches raster CRS
+
         layer_crs = layer.crs()
         if not layer_crs.isValid():
             raise RuntimeError(
                 f"Vector layer validation failed: Layer '{layer.name()}' has invalid CRS.\n"
                 f"Cannot proceed with rasterization."
             )
-        
+        if not crs or not crs.isValid():
+            raise RuntimeError(
+                "Vector layer validation failed: target raster CRS is invalid.\n"
+                "Cannot proceed with rasterization."
+            )
+
+        # Spatial intersection via provider filter — never assume first-N features represent the layer.
+        ok_inter, inter_info = self._vector_intersects_raster_extent(layer, raster_extent, crs)
+        if not ok_inter:
+            raise RuntimeError(
+                "Vector layer validation failed: {0}\n"
+                "Layer: '{1}'\n"
+                "Geometry type: {2}\n"
+                "Feature count: {3}\n"
+                "Cannot rasterize until at least one feature intersects the analysis raster extent.".format(
+                    inter_info,
+                    layer.name(),
+                    geometry_type_str,
+                    feature_count,
+                )
+            )
+
+        # After sanitization the CRS should match; still report mismatches clearly.
         if layer_crs.authid() != crs.authid():
             raise RuntimeError(
                 f"Vector layer validation failed: CRS mismatch.\n"
@@ -7388,9 +8131,15 @@ class WindSuitability:
             )
         
         # All checks passed
-        print(f"  ✓ Pre-rasterization validation passed: {layer.name()} ({geometry_type_str}, {feature_count} features)")
+        checked = inter_info.get("candidates_checked") if isinstance(inter_info, dict) else "?"
+        print(
+            "  ✓ Pre-rasterization validation passed: {0} ({1}, {2} features; "
+            "spatial candidates examined={3})".format(
+                layer.name(), geometry_type_str, feature_count, checked
+            )
+        )
 
-    def sanitize_vector_for_rasterization(self, vector_layer, ref_raster_layer):
+    def sanitize_vector_for_rasterization(self, vector_layer, ref_raster_layer, clip_to_aoi=True):
         """
         CRITICAL: Sanitize vector layer before rasterization to prevent spatial corruption.
         
@@ -7533,13 +8282,19 @@ class WindSuitability:
         
         vector_extent_before_clip = current_layer.extent()
 
-        # STEP 3: Clip to user AOI polygon FIRST (not rectangular extent), when AOI exists
+        # STEP 3: Optionally clip to user AOI polygon.
+        # Proximity must NOT clip to AOI here: nearest features may lie just outside the AOI.
         clipped_path = os.path.join(temp_dir, f"sanitized_clipped_{unique_id}.gpkg")
         overlay_path = None
         try:
             aoi_ul = self.get_user_aoi_layer()
             used_aoi_clip = False
-            if aoi_ul and aoi_ul.isValid() and aoi_ul.featureCount() > 0:
+            if (
+                clip_to_aoi
+                and aoi_ul
+                and aoi_ul.isValid()
+                and aoi_ul.featureCount() > 0
+            ):
                 overlay_path = os.path.join(temp_dir, f"sanitized_aoi_overlay_{unique_id}.gpkg")
                 try:
                     if aoi_ul.crs().isValid() and ref_crs.isValid() and aoi_ul.crs().authid() == ref_crs.authid():
@@ -7588,7 +8343,10 @@ class WindSuitability:
                 current_layer = clipped_layer
                 current_path = clipped_path
             else:
-                # STEP 4: No AOI — require overlap with reference grid, then clip to reference rectangle
+                # STEP 4: No AOI polygon clip (Binary without AOI, or Proximity).
+                # Require overlap with the reference grid. For proximity, keep features that
+                # fall on the master grid even when they lie outside the AOI polygon — do not
+                # force a rectangular extract/clip that can drop valid near-boundary lines.
                 vector_extent = current_layer.extent()
                 if not vector_extent.intersects(ref_extent):
                     return None, False, (
@@ -7602,31 +8360,69 @@ class WindSuitability:
                         f"- Reference raster is wrong\n"
                         f"- CRS transformation failed"
                     )
-                processing.run("native:extractbyextent", {
-                    'INPUT': current_layer,
-                    'EXTENT': ref_extent,
-                    'CLIP': True,
-                    'OUTPUT': clipped_path
-                })
-                if not os.path.exists(clipped_path):
-                    return None, False, "Clipping failed - output file not created"
-                clipped_layer = QgsVectorLayer(clipped_path, "Clipped", "ogr")
-                if not clipped_layer.isValid():
-                    return None, False, "Clipped layer is invalid"
-                if clipped_layer.featureCount() == 0:
-                    return None, False, (
-                        f"Vector layer has no features after clipping to reference extent.\n"
-                        f"Vector extent (before clip): {vector_extent.toString()}\n"
-                        f"Reference extent: {ref_extent.toString()}\n"
-                        f"Vector CRS: {current_layer.crs().authid()}\n"
-                        f"Reference CRS: {ref_crs.authid()}\n\n"
-                        f"These extents do not overlap after clipping."
+                if clip_to_aoi:
+                    # Binary path without a usable AOI polygon: clip to reference rectangle.
+                    processing.run("native:extractbyextent", {
+                        'INPUT': current_layer,
+                        'EXTENT': ref_extent,
+                        'CLIP': True,
+                        'OUTPUT': clipped_path
+                    })
+                    if not os.path.exists(clipped_path):
+                        return None, False, "Clipping failed - output file not created"
+                    clipped_layer = QgsVectorLayer(clipped_path, "Clipped", "ogr")
+                    if not clipped_layer.isValid():
+                        return None, False, "Clipped layer is invalid"
+                    if clipped_layer.featureCount() == 0:
+                        return None, False, (
+                            f"Vector layer has no features after clipping to reference extent.\n"
+                            f"Vector extent (before clip): {vector_extent.toString()}\n"
+                            f"Reference extent: {ref_extent.toString()}\n"
+                            f"Vector CRS: {current_layer.crs().authid()}\n"
+                            f"Reference CRS: {ref_crs.authid()}\n\n"
+                            f"These extents do not overlap after clipping."
+                        )
+                    clipped_extent = clipped_layer.extent()
+                    if clipped_extent.isEmpty() or clipped_extent.isNull():
+                        return None, False, "Clipped layer has empty extent"
+                    current_layer = clipped_layer
+                    current_path = clipped_path
+                else:
+                    # Proximity: keep features that intersect the master grid (including those
+                    # outside the AOI polygon). CLIP=False preserves full geometries so nearby
+                    # off-AOI lines still contribute distance; features wholly outside the
+                    # master extent are dropped (they cannot burn onto the analysis grid).
+                    # This also avoids loading 100k+ non-candidate features into later steps.
+                    processing.run("native:extractbyextent", {
+                        "INPUT": current_layer,
+                        "EXTENT": ref_extent,
+                        "CLIP": False,
+                        "OUTPUT": clipped_path,
+                    })
+                    if not os.path.exists(clipped_path):
+                        return None, False, (
+                            "Proximity candidate extraction failed - output file not created"
+                        )
+                    clipped_layer = QgsVectorLayer(clipped_path, "ProximityCandidates", "ogr")
+                    if not clipped_layer.isValid():
+                        return None, False, "Proximity candidate layer is invalid"
+                    if clipped_layer.featureCount() == 0:
+                        return None, False, (
+                            f"No vector features intersect the analysis master raster extent.\n"
+                            f"Vector extent: {vector_extent.toString()}\n"
+                            f"Reference extent: {ref_extent.toString()}\n"
+                            f"Vector CRS: {current_layer.crs().authid()}\n"
+                            f"Reference CRS: {ref_crs.authid()}\n\n"
+                            f"Proximity requires at least one feature that intersects the "
+                            f"master grid (features may lie outside the AOI polygon)."
+                        )
+                    print(
+                        "  [SANITIZE] Proximity/no-AOI-clip: retained {0} feature(s) intersecting "
+                        "the master grid (geometries not clipped; AOI mask applied after "
+                        "distance/normalization).".format(clipped_layer.featureCount())
                     )
-                clipped_extent = clipped_layer.extent()
-                if clipped_extent.isEmpty() or clipped_extent.isNull():
-                    return None, False, "Clipped layer has empty extent"
-                current_layer = clipped_layer
-                current_path = clipped_path
+                    current_layer = clipped_layer
+                    current_path = clipped_path
 
             # STEP 5: Clipped features must intersect the analysis reference grid (AOI must lie on grid)
             ve = current_layer.extent()
@@ -7647,7 +8443,9 @@ class WindSuitability:
         
         return current_path, True, None
 
-    def rasterize_vector_against_mca_reference(self, vector_layer, output_path, layer_name=None, reference_raster=None):
+    def rasterize_vector_against_mca_reference(
+        self, vector_layer, output_path, layer_name=None, reference_raster=None, clip_to_aoi=True
+    ):
         """
         Standardized vector-to-raster conversion using a reference raster as SINGLE SOURCE OF TRUTH.
         Prefers Spatial_Filtered_Raster / Prospect_Area when reference_raster is passed; otherwise uses MCA reference.
@@ -7752,9 +8550,9 @@ class WindSuitability:
         # END DEBUG STEP 1
         
         # STEP 1: Sanitize vector layer using mandatory pipeline
-        print(f"  Step 1: Sanitizing vector layer...")
+        print(f"  Step 1: Sanitizing vector layer (clip_to_aoi={clip_to_aoi})...")
         sanitized_path, sanitize_success, sanitize_error = self.sanitize_vector_for_rasterization(
-            vector_layer, ref_raster
+            vector_layer, ref_raster, clip_to_aoi=clip_to_aoi
         )
         
         if not sanitize_success:
@@ -7776,45 +8574,24 @@ class WindSuitability:
         except RuntimeError as validation_error:
             return None, f"Pre-rasterization validation failed: {str(validation_error)}"
         
-        # DEBUG STEP 2 — Spatial Intersection Verification
+        # DEBUG STEP 2 — Spatial Intersection Verification (spatial filter, not first-N sample)
         print(f"  [DEBUG STEP 2] Spatial Intersection Verification:")
-        raster_rect = QgsRectangle(
-            raster_extent.xMinimum(),
-            raster_extent.yMinimum(),
-            raster_extent.xMaximum(),
-            raster_extent.yMaximum()
+        print(f"    Raster extent rectangle: {raster_extent.toString()}")
+        ok_dbg, dbg_info = self._vector_intersects_raster_extent(
+            sanitized_layer, raster_extent, output_crs
         )
-        print(f"    Raster extent rectangle: {raster_rect.toString()}")
-        
-        has_intersection = False
-        checked_features = 0
-        max_check = min(100, sanitized_layer.featureCount())
-        
-        for feature in sanitized_layer.getFeatures():
-            if checked_features >= max_check:
-                break
-            checked_features += 1
-            geom = feature.geometry()
-            if geom and not geom.isEmpty():
-                feat_bbox = geom.boundingBox()
-                if feat_bbox.intersects(raster_rect):
-                    has_intersection = True
-                    print(f"    ✓ Found intersection at feature {checked_features}")
-                    print(f"      Feature bbox: {feat_bbox.toString()}")
-                    break
-        
-        if not has_intersection:
+        if not ok_dbg:
             error_msg = (
-                f"[DEBUG STEP 2] CRITICAL: No spatial intersection found between vector features and raster extent.\n"
-                f"Checked {checked_features} features out of {sanitized_layer.featureCount()} total.\n"
-                f"Vector extent: {sanitized_layer.extent().toString()}\n"
-                f"Raster extent: {raster_extent.toString()}\n"
-                f"This indicates a spatial misalignment that will cause silent rasterization failure."
+                "[DEBUG STEP 2] CRITICAL: No spatial intersection found between vector "
+                "features and raster extent.\n{0}".format(dbg_info)
             )
             print(f"  {error_msg}")
             raise RuntimeError(error_msg)
-        else:
-            print(f"    ✓ Spatial intersection confirmed")
+        print(
+            "    ✓ Spatial intersection confirmed (candidates examined={0})".format(
+                dbg_info.get("candidates_checked") if isinstance(dbg_info, dict) else "?"
+            )
+        )
         # END DEBUG STEP 2
         
         # STEP 2: Rasterize using EXACT reference raster parameters
@@ -8047,7 +8824,14 @@ class WindSuitability:
         Distance is in georeferenced units (meters when CRS is metric).
         Target pixels are those with value 1; output is distance to nearest such pixel.
         Returns (True, None) on success, (False, error_message) on failure.
+
+        Defense-in-depth: refuse before any Processing/GDAL write unless a live AOI and
+        current spatial_filtered master grid are available (same gate as GUI entry points).
         """
+        try:
+            self._require_proximity_analysis_context()
+        except RuntimeError as ctx_err:
+            return False, str(ctx_err)
         if not binary_raster_path or not os.path.exists(binary_raster_path):
             return False, "Binary raster path missing or file not found"
         if not reference_raster or not reference_raster.isValid():
@@ -8085,9 +8869,8 @@ class WindSuitability:
             temp_aligned_binary = self._normalize_path(
                 os.path.join(tempfile.gettempdir(), f"proximity_bin_aligned_{uuid.uuid4().hex[:8]}.tif")
             )
-            wind_master = self._require_wind_master_path()
             ok_align = self._warp_raster_to_reference_grid(
-                wind_master,
+                reference_raster_path,
                 working_binary_path,
                 temp_aligned_binary,
                 nodata_value=self._binary_byte_warp_nodata(),
@@ -8132,7 +8915,7 @@ class WindSuitability:
                         os.path.join(tempfile.gettempdir(), f"proximity_aligned_{uuid.uuid4().hex[:8]}.tif")
                     )
                     ok_prox_align = self._warp_raster_to_reference_grid(
-                        wind_master,
+                        reference_raster_path,
                         output_path,
                         temp_aligned_prox,
                         nodata_value=MCA_NODATA,
@@ -8261,8 +9044,16 @@ class WindSuitability:
                         temp_aligned_distance = self._normalize_path(
                             os.path.join(tempfile.gettempdir(), f"distance_norm_aligned_{uuid.uuid4().hex[:8]}.tif")
                         )
-                        wind_master = self._require_wind_master_path()
-                        if not self._warp_raster_to_reference_grid(wind_master, working_distance_path, temp_aligned_distance, nodata_value=MCA_NODATA):
+                        # Align to the same master/analysis reference used for proximity (not an unrelated wind path).
+                        align_ref = ref_path_for_stats
+                        if not align_ref or not os.path.exists(align_ref):
+                            try:
+                                align_ref, _src = self._require_analysis_master_grid_path()
+                            except Exception:
+                                align_ref = None
+                        if not align_ref or not os.path.exists(align_ref):
+                            return False, "No analysis master grid available to align distance raster before normalization"
+                        if not self._warp_raster_to_reference_grid(align_ref, working_distance_path, temp_aligned_distance, nodata_value=MCA_NODATA):
                             return False, "Distance raster could not be aligned to reference grid before normalization"
                         if not os.path.exists(temp_aligned_distance):
                             return False, "Aligned distance raster missing before normalization"
@@ -10689,11 +11480,15 @@ class WindSuitability:
         """
         if not geometry or geometry.isEmpty():
             raise RuntimeError("AOI geometry is empty.")
+        previous_aoi_token = self._aoi_identity_token()
         aoi_vec = self.create_aoi_layer_from_geometry(
             geometry, source_crs, axis_align_in_analysis_crs=axis_align_in_analysis_crs
         )
         self.user_aoi_layer = aoi_vec
         self._register_user_aoi_layer(aoi_vec)
+        new_aoi_token = self._aoi_identity_token(aoi_vec)
+        if previous_aoi_token != new_aoi_token:
+            self._invalidate_spatial_outputs_for_aoi_change(reason="aoi_geometry_changed")
         self.aoi_master_layer = aoi_vec
         self.analysis_crs = aoi_vec.crs()
         self.aoi_extent = aoi_vec.extent()
@@ -12914,6 +13709,106 @@ TIPS:
             table.setSelectionBehavior(1)  # SelectRows
             table.setSelectionMode(3)  # ExtendedSelection
 
+    def _select_vector_analysis_mode(self, layer_name=None):
+        """
+        Historical Suitability Analysis choice restored as an explicit dialog.
+        Returns 'binary', 'proximity', or None if cancelled.
+        """
+        from qgis.PyQt.QtWidgets import (
+            QDialog,
+            QVBoxLayout,
+            QLabel,
+            QRadioButton,
+            QDialogButtonBox,
+            QButtonGroup,
+        )
+
+        dlg = QDialog(self.dlg if self.dlg else None)
+        dlg.setWindowTitle(self.tr("Select Vector Analysis Method"))
+        dlg.setMinimumWidth(460)
+        layout = QVBoxLayout(dlg)
+
+        intro = QLabel(
+            self.tr(
+                "Choose how to convert vector layer{0} into an MCA raster criterion."
+            ).format(" '{}'".format(layer_name) if layer_name else "")
+        )
+        intro.setWordWrap(True)
+        layout.addWidget(intro)
+
+        group = QButtonGroup(dlg)
+        rb_binary = QRadioButton(self.tr("Binary Analysis"))
+        rb_binary.setChecked(True)
+        group.addButton(rb_binary, 0)
+        layout.addWidget(rb_binary)
+        desc_binary = QLabel(
+            self.tr(
+                "Convert vector features into a binary suitability criterion (0/1) "
+                "based on their spatial presence or overlap."
+            )
+        )
+        desc_binary.setWordWrap(True)
+        desc_binary.setStyleSheet("color: #444; margin-left: 22px; margin-bottom: 8px;")
+        layout.addWidget(desc_binary)
+
+        rb_prox = QRadioButton(self.tr("Proximity Analysis"))
+        group.addButton(rb_prox, 1)
+        layout.addWidget(rb_prox)
+        desc_prox = QLabel(
+            self.tr(
+                "Calculate distance from analysis cells to the nearest selected vector feature."
+            )
+        )
+        desc_prox.setWordWrap(True)
+        desc_prox.setStyleSheet("color: #444; margin-left: 22px; margin-bottom: 8px;")
+        layout.addWidget(desc_prox)
+
+        note = QLabel(
+            self.tr(
+                "Distances use georeferenced metric units on the authoritative MCA master grid "
+                "(projected analysis CRS). Proximity is then inverse-normalized to [0,1] suitability "
+                "(closer = higher) before MCA weighting, matching the historical Suitability Analysis workflow."
+            )
+        )
+        note.setWordWrap(True)
+        note.setStyleSheet("margin-top: 6px;")
+        layout.addWidget(note)
+
+        buttons = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+        )
+        buttons.accepted.connect(dlg.accept)
+        buttons.rejected.connect(dlg.reject)
+        layout.addWidget(buttons)
+
+        if dlg.exec() != QDialog.DialogCode.Accepted:
+            return None
+        return "proximity" if rb_prox.isChecked() else "binary"
+
+    def _geometry_type_label(self, vector_layer):
+        try:
+            gt = vector_layer.geometryType()
+        except Exception:
+            return "Unknown"
+        if gt == QgsWkbTypes.PointGeometry:
+            return "Point"
+        if gt == QgsWkbTypes.LineGeometry:
+            return "Line"
+        if gt == QgsWkbTypes.PolygonGeometry:
+            return "Polygon"
+        if gt == QgsWkbTypes.NullGeometry:
+            return "Null"
+        return "Unknown"
+
+    def _vector_source_path(self, vector_layer):
+        try:
+            src = vector_layer.source() if hasattr(vector_layer, "source") else None
+            if src:
+                return self._normalize_path(str(src).split("|")[0].strip().strip('"'))
+        except Exception:
+            pass
+        return None
+
     def add_layer_from_file_to_weights_table(self):
         """Browse for a raster file and append it as one MCA criterion (does not replace existing rows)."""
         if not hasattr(self.dlg, 'tbl_weights'):
@@ -12937,7 +13832,7 @@ TIPS:
                 self.tr("Raster required"),
                 self.tr(
                     "Add Raster Criterion only accepts raster files. "
-                    "Load a vector in QGIS and use Add Layer if you need conversion."
+                    "Use Add Vector Criterion... for vector datasets."
                 ),
             )
             return
@@ -12957,6 +13852,144 @@ TIPS:
             self.log_mca_message(
                 "WARNING: Add Raster Criterion did not append a new table row (existing criteria unchanged)."
             )
+
+    def add_vector_criterion_from_file(self):
+        """Browse for a vector file and convert it via Binary or Proximity analysis."""
+        if not hasattr(self.dlg, "tbl_weights"):
+            QMessageBox.warning(self.dlg, "Error", "Weights table not found in dialog.")
+            return
+        path, _ = QFileDialog.getOpenFileName(
+            self.dlg,
+            self.tr("Select vector criterion"),
+            "",
+            self.tr(
+                "GeoPackage (*.gpkg);;Shapefile (*.shp);;GeoJSON (*.geojson *.json);;"
+                "Vector files (*.gpkg *.shp *.geojson *.json *.gml *.kml);;All Files (*)"
+            ),
+        )
+        if not path or not os.path.exists(path):
+            return
+        path = self._normalize_path(path)
+        if path.lower().endswith((".tif", ".tiff", ".vrt", ".img", ".asc")):
+            QMessageBox.warning(
+                self.dlg,
+                self.tr("Vector required"),
+                self.tr(
+                    "Add Vector Criterion only accepts vector files. "
+                    "Use Add Raster Criterion... for rasters."
+                ),
+            )
+            return
+        base = os.path.splitext(os.path.basename(path))[0]
+        layer = QgsVectorLayer(path, base, "ogr")
+        if not layer or not layer.isValid():
+            QMessageBox.warning(
+                self.dlg,
+                self.tr("Invalid vector"),
+                self.tr(
+                    "Could not load a valid vector layer from:\n{}\n\n"
+                    "Check that the file exists and that QGIS/GDAL supports the format."
+                ).format(path),
+            )
+            return
+        if layer.featureCount() <= 0:
+            QMessageBox.warning(
+                self.dlg,
+                self.tr("Empty vector"),
+                self.tr("The selected vector layer has no features and cannot be used as an MCA criterion."),
+            )
+            return
+        QgsProject.instance().addMapLayer(layer)
+        before_count = self.dlg.tbl_weights.rowCount()
+        self.add_layer_to_weights_table(from_file_layer=layer)
+        after_count = self.dlg.tbl_weights.rowCount()
+        if after_count < before_count + 1:
+            self.log_mca_message(
+                "WARNING: Add Vector Criterion did not append a new table row (existing criteria unchanged)."
+            )
+
+    def _regenerate_vector_criterion_raster(self, item):
+        """
+        Rebuild a derived Binary/Proximity raster from a persisted vector criterion.
+        Uses the historical rasterize → (optional) proximity → inverse-normalize pipeline.
+        Returns (derived_path, None) or (None, error_message).
+        """
+        src = item.get("source_vector_path")
+        mode = item.get("analysis_mode") or "binary"
+        if not src:
+            return None, "source_vector_path missing"
+        src_path = self._normalize_path(str(src).split("|")[0].strip().strip('"'))
+        if not src_path or not os.path.isfile(src_path):
+            return None, "source vector file not found: {}".format(src)
+        name = item.get("source_vector_name") or item.get("layer_name") or "vector_criterion"
+        vlayer = QgsVectorLayer(src_path, name, "ogr")
+        if not vlayer.isValid():
+            return None, "could not open source vector"
+        if vlayer.featureCount() <= 0:
+            return None, "source vector has no features"
+
+        if mode == "proximity":
+            try:
+                ref_layer, _master_path, _aoi = self._require_proximity_analysis_context()
+            except RuntimeError as e:
+                return None, str(e)
+        else:
+            master_layer, _master_path, _master_name = self.get_master_reference_raster_for_decision_making()
+            ref_layer = master_layer if master_layer and master_layer.isValid() else getattr(self, "mca_reference_raster", None)
+            if not ref_layer or not ref_layer.isValid():
+                return None, "no master reference raster; complete Spatial Filtering first"
+
+        try:
+            output_dir = self._vector_criteria_output_dir()
+        except Exception as e:
+            return None, str(e)
+
+        safe = "".join(ch if ch.isalnum() or ch in ("_", "-") else "_" for ch in name)[:120] or "vector"
+        run_uid = uuid.uuid4().hex[:8]
+        binary_path = self._normalize_path(os.path.join(output_dir, "{}_converted_temp_{}.tif".format(safe, run_uid)))
+        converted, err = self.rasterize_vector_against_mca_reference(
+            vlayer,
+            binary_path,
+            layer_name="{} (Converted)".format(name),
+            reference_raster=ref_layer,
+            clip_to_aoi=(mode != "proximity"),
+        )
+        if err or not converted:
+            return None, err or "rasterize failed"
+        derived = self._normalize_path(converted.source()) if converted else binary_path
+        if mode == "proximity":
+            distance_path = self._normalize_path(os.path.join(output_dir, "{}_distance_{}.tif".format(safe, run_uid)))
+            ok_p, err_p = self._compute_proximity_raster(derived, distance_path, reference_raster=ref_layer)
+            if not ok_p:
+                return None, err_p
+            suitability_path = self._normalize_path(
+                os.path.join(output_dir, "{}_suitability_{}.tif".format(safe, run_uid))
+            )
+            ok_n, err_n = self._normalize_distance_to_suitability_raster(
+                distance_path, suitability_path, reference_raster=ref_layer
+            )
+            if not ok_n:
+                return None, err_n
+            ref_path = self._normalize_path(ref_layer.source())
+            masked_path = self._normalize_path(
+                os.path.join(output_dir, "{}_suitability_aoi_{}.tif".format(safe, run_uid))
+            )
+            if not self._multiply_float_raster_by_aoi_mask(
+                suitability_path, ref_path, masked_path, ref_info=self._get_reference_raster_info(ref_path)
+            ):
+                return None, "failed to apply AOI mask to regenerated proximity suitability"
+            self._release_and_remove_path(suitability_path)
+            try:
+                shutil.move(masked_path, suitability_path)
+            except Exception:
+                suitability_path = masked_path
+            ok_v, err_v = self._validate_proximity_suitability_masked_to_aoi(suitability_path, ref_path)
+            if not ok_v:
+                return None, err_v
+            derived = suitability_path
+        if not os.path.isfile(derived):
+            return None, "derived raster missing after conversion"
+        return derived, None
 
     def _safe_layer_name(self, layer):
         """Get layer name whether QGIS exposes it as .name() or .name property. Safe if layer is None, bool, or wrong type."""
@@ -13057,129 +14090,176 @@ TIPS:
             )
             return
         
-        # If vector layer, convert to raster first
-        use_distance_criterion = False  # Phase 1: power grid as distance-based MCA criterion
+        # If vector layer, convert to raster first — never treat raw vectors as raster criteria
+        use_distance_criterion = False  # Historical: proximity / distance-based MCA criterion
+        vector_meta = None
         if layer_type == 'vector':
-            reply = QMessageBox.question(
-                self.dlg,
-                "Convert Vector to Raster",
-                f"'{self._safe_layer_name(selected_layer)}' is a vector layer. It needs to be converted to raster for MCA analysis.\n\n"
-                "Would you like to convert it now?",
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-                QMessageBox.StandardButton.Yes
-            )
-            
-            if reply != QMessageBox.StandardButton.Yes:
+            if not isinstance(selected_layer, QgsVectorLayer) or not selected_layer.isValid():
+                QMessageBox.warning(
+                    self.dlg,
+                    self.tr("Invalid vector"),
+                    self.tr("The selected layer is not a valid vector layer."),
+                )
                 return
+            if selected_layer.featureCount() <= 0:
+                QMessageBox.warning(
+                    self.dlg,
+                    self.tr("Empty vector"),
+                    self.tr("The selected vector layer has no features and cannot be used as an MCA criterion."),
+                )
+                return
+            try:
+                if selected_layer.geometryType() == QgsWkbTypes.NullGeometry:
+                    QMessageBox.warning(
+                        self.dlg,
+                        self.tr("Unsupported geometry"),
+                        self.tr("Layers without geometry cannot be converted to an MCA criterion."),
+                    )
+                    return
+            except Exception:
+                pass
 
-            # Phase 1: Ask whether to use as binary (presence/absence) or distance (proximity, e.g. power grid)
-            criterion_options = ["Binary (presence/absence)", "Distance (proximity, e.g. power grid)"]
-            criterion_choice, ok_choice = QInputDialog.getItem(
-                self.dlg,
-                "Criterion type",
-                "Use this vector layer as:",
-                criterion_options,
-                0,
-                False
-            )
-            if not ok_choice or not criterion_choice:
+            mode = self._select_vector_analysis_mode(self._safe_layer_name(selected_layer))
+            if mode is None:
                 return
-            use_distance_criterion = (criterion_choice == criterion_options[1])
+            use_distance_criterion = mode == "proximity"
+
+            # Resolve authoritative reference BEFORE creating any derived rasters / pending state.
+            # Proximity must hard-stop with a clear message when AOI or spatial master is missing.
+            ref_layer = None
+            master_path = None
+            aoi_ctx = None
             if use_distance_criterion:
+                try:
+                    ref_layer, master_path, aoi_ctx = self._require_proximity_analysis_context()
+                except RuntimeError as ctx_err:
+                    self._pending_vector_criterion_meta = None
+                    QMessageBox.warning(
+                        self.dlg,
+                        self.tr("Proximity Analysis"),
+                        str(ctx_err),
+                    )
+                    return
+
+            vector_meta = {
+                "source_type": "vector",
+                "analysis_mode": mode,
+                "geometry_type": self._geometry_type_label(selected_layer),
+                "source_vector_path": self._vector_source_path(selected_layer),
+                "source_vector_id": selected_layer.id() if hasattr(selected_layer, "id") else None,
+                "source_vector_name": self._safe_layer_name(selected_layer),
+                "processing_params": {
+                    "rasterize_burn": 1.0,
+                    "rasterize_init": 0.0,
+                    "binary_nodata": int(BINARY_BYTE_NODATA) if "BINARY_BYTE_NODATA" in globals() else 255,
+                    "proximity_values": [1],
+                    "proximity_units": "GEO",
+                    "proximity_max_distance": 0,
+                    "proximity_nodata": MCA_NODATA,
+                    "distance_normalization": "inverse_minmax_to_unit_interval",
+                    "clip_source_to_aoi_before_distance": False if use_distance_criterion else True,
+                },
+            }
+            if use_distance_criterion:
+                vector_meta["aoi_identity"] = self._aoi_identity_token(aoi_ctx)
+                vector_meta["master_grid_path"] = master_path
                 print(f"  [MCA] Input detected as vector; will use as distance-based criterion (proximity -> normalized suitability)")
+                QgsMessageLog.logMessage(
+                    "[WindSuitability] Proximity using current spatial_filtered master grid: {}".format(master_path),
+                    "WindSuitability",
+                    Qgis.Info,
+                )
             else:
                 print(f"  [MCA] Input detected as vector; will use as binary criterion (rasterization only)")
-            
-            # Prefer master reference grid (Spatial_Filtered_Raster or Prospect_Area) so Decision Making does not depend on MCA grid
-            ref_layer = None
-            master_layer, master_path, master_name = self.get_master_reference_raster_for_decision_making()
-            if master_layer and master_layer.isValid():
-                ref_layer = master_layer
-                if master_name == "Spatial_Filtered_Raster":
-                    QgsMessageLog.logMessage(
-                        "[WindSuitability] Using Spatial_Filtered_Raster as reference grid for criterion rasterization.",
-                        "WindSuitability", Qgis.Info)
-                else:
-                    QgsMessageLog.logMessage(
-                        "[WindSuitability] Using Prospect_Area as reference grid for criterion rasterization.",
-                        "WindSuitability", Qgis.Info)
-            # Fallback: create MCA reference raster from AOI if no master grid exists
-            if not ref_layer or not ref_layer.isValid():
-                if not self.mca_reference_raster or not self.mca_reference_raster.isValid():
-                    print(f"  MCA reference raster not found, creating from AOI...")
-                    aoi_for_grid = self.get_user_aoi_layer()
-                    if not aoi_for_grid or not aoi_for_grid.isValid():
-                        QMessageBox.warning(
-                            self.dlg,
-                            "No reference grid",
-                            "Run Spatial Filter first to use its output as reference, or define an Area of Interest to create a reference grid."
-                        )
-                        return
-                    if not self.mca_output_dir:
-                        self.mca_output_dir = self.get_mca_output_directory()
-                    reference_path = os.path.join(self.mca_output_dir, "mca_reference_grid.tif")
-                    ref_raster, ref_error = self.create_reference_raster_from_aoi(
-                        aoi_for_grid,
-                        reference_path
-                    )
-                    if ref_raster:
-                        self.mca_reference_raster = ref_raster
-                        print(f"  ✓ Reference raster created: {self.mca_reference_raster.width()} x {self.mca_reference_raster.height()} pixels")
-                    else:
-                        QMessageBox.critical(
-                            self.dlg,
-                            "Reference Raster Creation Failed",
-                            ref_error or "Failed to create reference raster"
-                        )
-                        return
-                ref_layer = self.mca_reference_raster
+            self._pending_vector_criterion_meta = vector_meta
 
-            # Prospect/spatial-filter grid must overlap the current AOI; otherwise build an AOI-aligned grid at the same pixel size.
-            aoi_for_align = self.get_user_aoi_layer()
-            if ref_layer and ref_layer.isValid() and aoi_for_align and aoi_for_align.isValid() and aoi_for_align.featureCount() > 0:
-                if not self._reference_raster_overlaps_user_aoi(ref_layer):
-                    ref_src = self._normalize_path(ref_layer.source())
-                    info_align = self._get_reference_raster_info(ref_src) if ref_src and os.path.exists(ref_src) else None
-                    px_align = float(info_align["res_x"]) if info_align and info_align.get("res_x") else MCA_RESOLUTION
-                    align_dir = self.get_mca_output_directory()
-                    if align_dir and os.path.isfile(align_dir):
-                        align_dir = os.path.dirname(align_dir)
-                    if not align_dir or not os.path.isdir(align_dir):
-                        align_dir = self.get_plugin_temp_dir()
-                    try:
-                        os.makedirs(align_dir, exist_ok=True)
-                    except Exception:
-                        pass
-                    aoi_ref_path = self._normalize_path(
-                        os.path.join(align_dir, "mca_vector_ref_aoi_{}.tif".format(uuid.uuid4().hex[:8]))
+            if not use_distance_criterion:
+                master_layer, master_path, master_name = self.get_master_reference_raster_for_decision_making()
+                if master_layer and master_layer.isValid():
+                    ref_layer = master_layer
+                    QgsMessageLog.logMessage(
+                        "[WindSuitability] Using {} as reference grid for binary criterion rasterization.".format(
+                            master_name or "master"
+                        ),
+                        "WindSuitability",
+                        Qgis.Info,
                     )
-                    new_ref, ref_align_err = self.create_reference_raster_from_aoi(
-                        aoi_for_align, aoi_ref_path, pixel_size=px_align
-                    )
-                    if new_ref and new_ref.isValid():
-                        ref_layer = new_ref
-                        QgsMessageLog.logMessage(
-                            "[WindSuitability] Prospect/spatial filter grid did not overlap the current AOI; "
-                            "using AOI-aligned reference grid at the same resolution.",
-                            "WindSuitability",
-                            Qgis.Warning,
+                # Binary fallback: create MCA reference from AOI only when no spatial master exists
+                if not ref_layer or not ref_layer.isValid():
+                    if not self.mca_reference_raster or not self.mca_reference_raster.isValid():
+                        print(f"  MCA reference raster not found, creating from AOI...")
+                        aoi_for_grid = self.get_user_aoi_layer()
+                        if not aoi_for_grid or not aoi_for_grid.isValid():
+                            self._pending_vector_criterion_meta = None
+                            QMessageBox.warning(
+                                self.dlg,
+                                "No reference grid",
+                                "Run Spatial Filter first to use its output as reference, or define an Area of Interest to create a reference grid."
+                            )
+                            return
+                        if not self.mca_output_dir:
+                            self.mca_output_dir = self.get_mca_output_directory()
+                        reference_path = os.path.join(self.mca_output_dir, "mca_reference_grid.tif")
+                        ref_raster, ref_error = self.create_reference_raster_from_aoi(
+                            aoi_for_grid,
+                            reference_path
                         )
-                    else:
-                        QMessageBox.warning(
-                            self.dlg,
-                            "Reference grid",
-                            "The analysis reference raster does not overlap your current Area of Interest, "
-                            "and an AOI-based grid could not be created.\n\n"
-                            + (ref_align_err or "Define an AOI that overlaps the prospect layer or re-run Spatial Filter."),
+                        if ref_raster:
+                            self.mca_reference_raster = ref_raster
+                            print(f"  ✓ Reference raster created: {self.mca_reference_raster.width()} x {self.mca_reference_raster.height()} pixels")
+                        else:
+                            self._pending_vector_criterion_meta = None
+                            QMessageBox.critical(
+                                self.dlg,
+                                "Reference Raster Creation Failed",
+                                ref_error or "Failed to create reference raster"
+                            )
+                            return
+                    ref_layer = self.mca_reference_raster
+
+                # Binary: if master does not overlap AOI, rebuild AOI-aligned grid at same resolution
+                aoi_for_align = self.get_user_aoi_layer()
+                if ref_layer and ref_layer.isValid() and aoi_for_align and aoi_for_align.isValid() and aoi_for_align.featureCount() > 0:
+                    if not self._reference_raster_overlaps_user_aoi(ref_layer):
+                        ref_src = self._normalize_path(ref_layer.source())
+                        info_align = self._get_reference_raster_info(ref_src) if ref_src and os.path.exists(ref_src) else None
+                        px_align = float(info_align["res_x"]) if info_align and info_align.get("res_x") else MCA_RESOLUTION
+                        align_dir = self.get_mca_output_directory()
+                        if align_dir and os.path.isfile(align_dir):
+                            align_dir = os.path.dirname(align_dir)
+                        if not align_dir or not os.path.isdir(align_dir):
+                            align_dir = self.get_plugin_temp_dir()
+                        try:
+                            os.makedirs(align_dir, exist_ok=True)
+                        except Exception:
+                            pass
+                        aoi_ref_path = self._normalize_path(
+                            os.path.join(align_dir, "mca_vector_ref_aoi_{}.tif".format(uuid.uuid4().hex[:8]))
                         )
-                        return
-            
-            # Convert vector to raster using standardized function
-            output_dir = self.get_mca_output_directory()
-            if output_dir and os.path.isfile(output_dir):
-                output_dir = os.path.dirname(output_dir)
-            if not output_dir or not os.path.isdir(output_dir):
-                output_dir = self.get_plugin_temp_dir()
+                        new_ref, ref_align_err = self.create_reference_raster_from_aoi(
+                            aoi_for_align, aoi_ref_path, pixel_size=px_align
+                        )
+                        if new_ref and new_ref.isValid():
+                            ref_layer = new_ref
+                            QgsMessageLog.logMessage(
+                                "[WindSuitability] Prospect/spatial filter grid did not overlap the current AOI; "
+                                "using AOI-aligned reference grid at the same resolution.",
+                                "WindSuitability",
+                                Qgis.Warning,
+                            )
+                        else:
+                            self._pending_vector_criterion_meta = None
+                            QMessageBox.warning(
+                                self.dlg,
+                                "Reference grid",
+                                "The analysis reference raster does not overlap your current Area of Interest, "
+                                "and an AOI-based grid could not be created.\n\n"
+                                + (ref_align_err or "Define an AOI that overlaps the prospect layer or re-run Spatial Filter."),
+                            )
+                            return
+
+            # Convert vector to raster using unique per-run vector_criteria directory
+            output_dir = self._vector_criteria_output_dir()
             
             # Sanitize layer name for filename (remove invalid characters)
             def sanitize_filename(name):
@@ -13266,13 +14346,15 @@ TIPS:
                 print(f"  [DEBUG STEP 1] Invalid Geometries: {invalid_count}")
                 # END DEBUG STEP 1
                 
-                # Use standardized rasterization function (master grid or MCA reference)
+                # Use standardized rasterization function (master grid or MCA reference).
+                # Proximity: do not clip source vectors to AOI before distance (external nearest features matter).
                 print(f"  Converting vector layer to raster using reference grid...")
                 converted_raster, raster_error = self.rasterize_vector_against_mca_reference(
                     selected_layer,
                     raster_output,
                     layer_name=f"{self._safe_layer_name(selected_layer)} (Converted)",
-                    reference_raster=ref_layer
+                    reference_raster=ref_layer,
+                    clip_to_aoi=not use_distance_criterion,
                 )
                 
                 if raster_error or not converted_raster:
@@ -13346,36 +14428,60 @@ TIPS:
                         )
                         return
                     print(f"  [MCA] Normalization applied; normalized suitability raster will be used in MCA weighting.")
-                    aoi_mask_ul = self.get_user_aoi_layer()
+                    # Stage 5: mandatory AOI polygon mask — outside AOI must be NoData (hard fail).
                     ref_path_for_mask = self._normalize_path(ref_layer.source()) if ref_layer and ref_layer.isValid() else None
-                    if (
-                        aoi_mask_ul
-                        and aoi_mask_ul.isValid()
-                        and aoi_mask_ul.featureCount() > 0
-                        and ref_path_for_mask
-                        and os.path.exists(ref_path_for_mask)
+                    if not ref_path_for_mask or not os.path.exists(ref_path_for_mask):
+                        self._pending_vector_criterion_meta = None
+                        QMessageBox.critical(
+                            self.dlg,
+                            self.tr("AOI mask"),
+                            self.tr(
+                                "Proximity suitability could not be masked to the AOI because the "
+                                "master reference path is missing. No criterion was added."
+                            ),
+                        )
+                        return
+                    ref_info_mask = self._get_reference_raster_info(ref_path_for_mask)
+                    masked_path = self._normalize_path(
+                        os.path.join(output_dir, f"{safe_layer_name}_suitability_aoi_{run_uid}.tif")
+                    )
+                    if not self._multiply_float_raster_by_aoi_mask(
+                        suitability_path, ref_path_for_mask, masked_path, ref_info=ref_info_mask
                     ):
-                        ref_info_mask = self._get_reference_raster_info(ref_path_for_mask)
-                        masked_path = os.path.join(output_dir, f"{safe_layer_name}_suitability_aoi.tif")
-                        if self._multiply_float_raster_by_aoi_mask(
-                            suitability_path, ref_path_for_mask, masked_path, ref_info=ref_info_mask
-                        ):
-                            self._release_and_remove_path(suitability_path)
-                            try:
-                                shutil.move(masked_path, suitability_path)
-                            except Exception as move_err:
-                                print(f"  [MCA] WARNING: Could not replace suitability with AOI-masked file: {move_err}")
-                                suitability_path = masked_path
-                            print(f"  [MCA] Distance suitability clipped to AOI polygon (outside AOI = NoData).")
-                        else:
-                            QMessageBox.warning(
-                                self.dlg,
-                                "AOI mask",
-                                "Distance suitability could not be clipped to the AOI polygon; values may extend outside the AOI.",
-                            )
+                        self._pending_vector_criterion_meta = None
+                        QMessageBox.critical(
+                            self.dlg,
+                            self.tr("AOI mask"),
+                            self.tr(
+                                "Failed to apply the current AOI polygon mask to the proximity suitability raster. "
+                                "No criterion was added and previous outputs were left unchanged."
+                            ),
+                        )
+                        return
+                    self._release_and_remove_path(suitability_path)
+                    try:
+                        shutil.move(masked_path, suitability_path)
+                    except Exception:
+                        suitability_path = masked_path
+                    print(f"  [MCA] Distance suitability masked to AOI polygon (outside AOI = NoData).")
+                    ok_mask, err_mask = self._validate_proximity_suitability_masked_to_aoi(
+                        suitability_path, ref_path_for_mask
+                    )
+                    if not ok_mask:
+                        self._pending_vector_criterion_meta = None
+                        QMessageBox.critical(
+                            self.dlg,
+                            self.tr("Proximity validation failed"),
+                            self.tr(
+                                "Proximity output failed AOI/grid validation:\n{}\n\n"
+                                "No criterion was added."
+                            ).format(err_mask or "unknown"),
+                        )
+                        return
                     self._remove_raster_layers_for_disk_path(suitability_path)
                     converted_raster = QgsRasterLayer(suitability_path, f"{self._safe_layer_name(selected_layer)} (Distance suitability)", "gdal")
                     if not converted_raster.isValid():
+                        self._pending_vector_criterion_meta = None
                         QMessageBox.critical(self.dlg, "Error", "Normalized suitability raster could not be loaded.")
                         return
                     self._apply_unit_interval_grayscale_symbology(converted_raster)
@@ -13419,19 +14525,27 @@ TIPS:
                 
                 # Update selected_layer to the converted raster
                 selected_layer = converted_raster
+                layer_type = "raster"  # scoring uses derived raster only
                 
                 print(f"  ✓ Conversion successful - raster layer created and added to project")
                 print(f"  Layer name: {converted_raster.name()}")
                 print(f"  Layer path: {raster_output}")
+
+                pending = getattr(self, "_pending_vector_criterion_meta", None) or vector_meta or {}
+                pending = dict(pending)
+                pending["derived_raster_path"] = self._normalize_path(raster_output)
+                pending["layer_path"] = pending["derived_raster_path"]
+                self._pending_vector_criterion_meta = pending
                 
                 # Show success message
+                mode_label = "Proximity" if use_distance_criterion else "Binary"
                 QMessageBox.information(
                     self.dlg,
                     "Conversion Successful",
-                    f"Vector layer converted to raster:\n{converted_raster.name()}\n\n"
+                    f"Vector layer converted ({mode_label} Analysis):\n{converted_raster.name()}\n\n"
                     f"Raster dimensions: {converted_raster.width()} x {converted_raster.height()} pixels\n"
                     f"CRS: {converted_raster.crs().authid()}\n\n"
-                    f"The layer has been added to the map and will now be added to the weights table."
+                    f"The derived raster has been added to the map and will now be added to the weights table."
                 )
                 
             except Exception as e:
@@ -13439,6 +14553,7 @@ TIPS:
                 error_details = traceback.format_exc()
                 print(f"  ERROR in vector-to-raster conversion: {str(e)}")
                 print(f"  Traceback: {error_details}")
+                self._pending_vector_criterion_meta = None
                 QMessageBox.critical(
                     self.dlg,
                     "Conversion Error",
@@ -13563,13 +14678,29 @@ TIPS:
             layer_path = selected_layer.source() if hasattr(selected_layer, "source") else None
         except Exception:
             layer_path = None
-        self.decision_making_layers.append({
+        entry = {
             'layer': selected_layer,
             'row': row,
             'layer_name': layer_name,
             'layer_id': selected_layer.id() if hasattr(selected_layer, "id") else None,
             'layer_path': layer_path,
-        })
+            'source_type': 'raster',
+        }
+        pending_meta = getattr(self, "_pending_vector_criterion_meta", None)
+        if isinstance(pending_meta, dict) and pending_meta.get("source_type") == "vector":
+            entry.update({
+                "source_type": "vector",
+                "analysis_mode": pending_meta.get("analysis_mode"),
+                "geometry_type": pending_meta.get("geometry_type"),
+                "source_vector_path": pending_meta.get("source_vector_path"),
+                "source_vector_id": pending_meta.get("source_vector_id"),
+                "source_vector_name": pending_meta.get("source_vector_name"),
+                "derived_raster_path": pending_meta.get("derived_raster_path") or layer_path,
+                "processing_params": pending_meta.get("processing_params"),
+                "layer_path": pending_meta.get("derived_raster_path") or layer_path,
+            })
+        self._pending_vector_criterion_meta = None
+        self.decision_making_layers.append(entry)
         self._reindex_decision_making_layers()
         print(f"  ✓ Stored layer reference in decision_making_layers (total: {len(self.decision_making_layers)})")
         
@@ -14337,7 +15468,7 @@ TIPS:
                     matched_item["layer_id"] = layer_id
                     matched_item["layer_path"] = layer_path
 
-            criteria_list.append({
+            entry = {
                 'layer_name': layer_name,
                 'weight': weight,
                 'role': role,
@@ -14346,8 +15477,22 @@ TIPS:
                 'layer': layer_obj,
                 'layer_id': layer_id,
                 'layer_path': layer_path,
-                'row_index': row
-            })
+                'row_index': row,
+                'source_type': (matched_item or {}).get('source_type') or 'raster',
+            }
+            if matched_item is not None:
+                for key in (
+                    "analysis_mode",
+                    "geometry_type",
+                    "source_vector_path",
+                    "source_vector_id",
+                    "source_vector_name",
+                    "derived_raster_path",
+                    "processing_params",
+                ):
+                    if matched_item.get(key) is not None:
+                        entry[key] = matched_item.get(key)
+            criteria_list.append(entry)
         
         return criteria_list
 
@@ -14513,7 +15658,19 @@ TIPS:
                 "save": criterion.get("save", True),
                 "layer_id": criterion.get("layer_id"),
                 "layer_path": criterion.get("layer_path"),
+                "source_type": criterion.get("source_type") or "raster",
             }
+            for key in (
+                "analysis_mode",
+                "geometry_type",
+                "source_vector_path",
+                "source_vector_id",
+                "source_vector_name",
+                "derived_raster_path",
+                "processing_params",
+            ):
+                if criterion.get(key) is not None:
+                    item[key] = criterion.get(key)
             layer = criterion.get("layer")
             if layer is not None and isinstance(layer, QgsRasterLayer) and self._layer_cpp_alive(layer):
                 crs = layer.crs()
@@ -14522,6 +15679,8 @@ TIPS:
                 src = self._layer_source_path(layer)
                 if src and not item.get("layer_path"):
                     item["layer_path"] = src
+                if item.get("source_type") == "vector" and src and not item.get("derived_raster_path"):
+                    item["derived_raster_path"] = src
             serializable.append(item)
         return _rl.build_criteria_export_payload(serializable)
 
@@ -14766,8 +15925,34 @@ TIPS:
             self.decision_making_layers = []
             warnings = []
             for item in normalized["criteria"]:
-                layer_path = item.get("layer_path")
+                item = dict(item)
+                layer_path = item.get("derived_raster_path") or item.get("layer_path")
                 layer = None
+                if item.get("source_type") == "vector":
+                    # Prefer existing derived raster; never invent a substitute raster.
+                    derived = item.get("derived_raster_path") or item.get("layer_path")
+                    src_vec = item.get("source_vector_path")
+                    if derived and os.path.isfile(derived):
+                        layer_path = derived
+                    elif src_vec and os.path.isfile(str(src_vec).split("|")[0].strip().strip('"')):
+                        # Re-run historical Binary/Proximity conversion from the source vector.
+                        regenerated, regen_err = self._regenerate_vector_criterion_raster(item)
+                        if regenerated:
+                            layer_path = regenerated
+                            item["derived_raster_path"] = regenerated
+                            item["layer_path"] = regenerated
+                        else:
+                            warnings.append(
+                                "Vector criterion '{}': derived raster missing and could not be regenerated ({}). "
+                                "Source: {}".format(item.get("layer_name"), regen_err or "unknown error", src_vec)
+                            )
+                            layer_path = None
+                    else:
+                        warnings.append(
+                            "Vector criterion '{}': missing derived raster and source vector path; "
+                            "not restored as a scoring layer.".format(item.get("layer_name"))
+                        )
+                        layer_path = None
                 if layer_path and os.path.isfile(layer_path):
                     layer = QgsRasterLayer(layer_path, item.get("layer_name") or "criterion", "gdal")
                     if not layer.isValid():
@@ -14779,8 +15964,8 @@ TIPS:
                             QgsProject.instance().addMapLayer(layer, False)
                         except Exception:
                             pass
-                        item = dict(item)
                         item["layer_id"] = layer.id()
+                        item["layer_path"] = layer_path
                 elif layer_path:
                     warnings.append("Missing layer file for '{}': {}".format(item.get("layer_name"), layer_path))
                 # Reuse existing add-row helpers when possible via decision_making_layers + table API
@@ -14919,7 +16104,19 @@ TIPS:
             "layer_path": layer_path,
             "layer": layer,
             "row": row,
+            "source_type": item.get("source_type") or "raster",
         }
+        for key in (
+            "analysis_mode",
+            "geometry_type",
+            "source_vector_path",
+            "source_vector_id",
+            "source_vector_name",
+            "derived_raster_path",
+            "processing_params",
+        ):
+            if item.get(key) is not None:
+                entry[key] = item.get(key)
         self.decision_making_layers.append(entry)
         self._reindex_decision_making_layers()
 
