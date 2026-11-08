@@ -1,0 +1,221 @@
+# Wind Site Select
+
+**GIS-based Wind Energy Site Selection**
+
+A QGIS plugin for wind energy site suitability assessment, spatial filtering, and multi-criteria decision analysis.
+
+Wind Site Select is intended for professional GIS users working on onshore and offshore wind energy site screening. It is a **GIS-based site screening and suitability tool**. It does **not** perform bankable energy-yield calculations, and it does **not** replace detailed engineering, environmental, grid-connection, or permitting studies.
+
+Users must provide appropriate source datasets wherever required. **No Germany raster dataset (or any other regional sample) is automatically selected as a fallback.**
+
+---
+
+## 1. Product overview
+
+Wind Site Select helps analysts:
+
+- Define an area of interest (AOI)
+- Screen wind and depth/bathymetry criteria to derive a prospect area
+- Apply spatial filters (exclusion / inclusion constraints)
+- Run multi-criteria analysis (MCA) with user-defined criteria and weights
+- Produce raster and vector suitability outputs and optional tabular reports
+
+Package identifier (QGIS plugin directory / ZIP root): `wind_site_select`
+Public display name: **Wind Site Select**
+
+---
+
+## 2. Main capabilities
+
+| Capability | Description |
+|---|---|
+| AOI definition | Draw or select AOI geometries for analysis |
+| Wind screening | Clip / threshold user-supplied wind rasters |
+| Depth / bathymetry | Clip / threshold user-supplied DEM or bathymetry rasters |
+| Prospect area | Combine wind and depth screens into a prospect mask / polygon |
+| Spatial filtering | Exclude and include layers with buffering; produce final suitable mask and polygons |
+| MCA | Weighted multi-criteria scoring over a grid within suitable areas |
+| Criteria management | Add/remove criteria, edit weights/roles, export/import JSON, project-scoped persistence |
+| Outputs | Suitability rasters, polygons (GeoPackage), optional Excel/CSV reports |
+| Results lifecycle | Run-scoped outputs under a project `results/` tree with a `current_run.json` manifest |
+
+---
+
+## 3. Installation
+
+### From a release ZIP (recommended)
+
+1. In QGIS: **Plugins → Manage and Install Plugins → Install from ZIP**
+2. Select `Wind_Site_Select_<version>.zip`
+3. Enable **Wind Site Select** in the Plugin Manager
+4. Open via the Plugins menu or toolbar action **Wind Site Select**
+
+The ZIP contains a single top-level folder `wind_site_select/`.
+
+### From source (developers)
+
+Copy or symlink the plugin package directory into your QGIS profile:
+
+`profiles/<profile>/python/plugins/wind_site_select/`
+
+Do not overwrite an existing production installation with a development copy without a backup.
+
+---
+
+## 4. Data requirements
+
+You must supply project-appropriate datasets, for example:
+
+- Wind speed (or related) raster
+- DEM / bathymetry raster (where depth screening is used)
+- Vector layers for exclusion / inclusion constraints (protected areas, infrastructure, etc.)
+- Optional MCA criterion rasters
+
+Supported inputs follow normal QGIS/GDAL raster and vector formats. CRS handling follows the plugin’s analysis-CRS helpers; mismatched CRS layers may be reprojected or rejected depending on the workflow step.
+
+**Important:** empty wind/DEM path fields do **not** load bundled sample Germany rasters. Analysis stops until a valid user path or map layer is provided.
+
+---
+
+## 5. Typical workflow
+
+1. **Create / open a QGIS project** and save it (recommended for MCA criteria persistence).
+2. **Define AOI** using the AOI tools in the dialog.
+3. **Wind analysis** — select a wind raster, set thresholds, run screening.
+4. **Depth analysis** (as needed) — select DEM/bathymetry, set thresholds, run screening.
+5. **Prospect area** — combine screens; optionally polygonize.
+6. **Spatial filter** — add exclude/include layers, run spatial filtering to obtain the final suitable mask and polygons.
+7. **Decision-making / MCA** — add criterion layers, set weights and roles, run MCA.
+8. **Review outputs** — rasters, polygons, and optional Excel/CSV report in a user-chosen folder.
+9. **Iterate** — re-run spatial or MCA steps as inputs change; the plugin tracks the current run via `results/current_run.json`.
+
+---
+
+## 6. Multi-criteria analysis (MCA)
+
+MCA scores candidate locations using user-defined raster criteria and weights.
+
+- Criteria can be marked beneficial or penalizing and included/excluded from a run.
+- Weights are user-controlled; an explicit normalize action is available (weights are **not** silently rewritten on restore).
+- Criteria and weights can be exported/imported as JSON.
+- For **saved projects**, criteria/weights are persisted in QSettings under a project-scoped key (legacy internal namespace retained for compatibility).
+- Computed score matrices are **not** restored from settings; re-run MCA to recompute scores.
+- MCA operates on the authoritative spatial suitability outputs for the current run (session → manifest → logged legacy alias fallback). Mixing a new-run raster with stale flat alias polygons is rejected.
+
+Optional Excel export (`mca_report.xlsx`) uses **openpyxl** when available; CSV fallback may be used when enabled if Excel writing fails.
+
+---
+
+## 7. Outputs
+
+Typical outputs (names may vary by run layout):
+
+| Output | Role |
+|---|---|
+| Prospect / spatial filter rasters | Byte masks of screened or final suitable areas |
+| `spatial_final_polygons.gpkg` | Vector polygons of suitable areas |
+| MCA score / suitability rasters | Continuous or classified suitability surfaces |
+| MCA suitability map (GeoPackage) | Vector/grid-related MCA results |
+| `mca_report.xlsx` / CSV | Tabular summary when reporting is requested |
+| `results/current_run.json` | Manifest of the authoritative current run |
+
+Canonical durable outputs live under the project’s `results/runs/<run_id>/` tree. Flat `results/` alias files may exist for compatibility but are not authoritative when a valid manifest/session path exists.
+
+---
+
+## 8. Dependencies
+
+| Dependency | Role | Provided by |
+|---|---|---|
+| Python 3 (QGIS-bundled) | Runtime | QGIS |
+| PyQGIS / PyQt | UI and GIS API | QGIS |
+| GDAL/OGR | Raster/vector I/O | QGIS |
+| NumPy | Array processing where used | Typically bundled with QGIS |
+| QGIS Processing | Geoprocessing algorithms | QGIS |
+| **openpyxl** (optional) | Writes `mca_report.xlsx` (Summary / Detailed / Metadata sheets) | Not bundled with this plugin; not guaranteed in every QGIS install |
+
+**openpyxl** is optional and used only for Excel MCA reporting. If it is not installed in the QGIS Python environment, Excel export fails gracefully and does not prevent plugin load or MCA computation. When CSV export is enabled, a CSV report may still be written. To enable Excel reports, install openpyxl into the same Python environment that QGIS uses (for example via the OSGeo4W / QGIS Python shell: `python -m pip install openpyxl`).
+
+No separate pip install is required for core functionality on a standard QGIS desktop install.
+
+---
+
+## 9. Supported and tested QGIS versions
+
+| Environment | Status |
+|---|---|
+| Windows + QGIS **4.0.3** | **Verified** in development/release testing |
+| QGIS 3.44 LTR | **Not verified** in this project |
+| Linux | **Not verified** |
+| macOS | **Not verified** |
+
+`metadata.txt` currently declares `qgisMinimumVersion=3.22` and `qgisMaximumVersion=4.99` as a static range. Treat versions other than the verified environment as untested until confirmed.
+
+---
+
+## 10. Current limitations
+
+- First public repository links (homepage, source, issue tracker) may still be pending.
+- Plugin remains marked **experimental** until public repository links are finalized.
+- Optional Excel reporting depends on **openpyxl** (not bundled; install into the QGIS Python environment if Excel export is required).
+- Interactive workflows assume a desktop QGIS session (not QGIS Server).
+- Large rasters and complex MCA grids can be memory- and disk-intensive.
+- Legacy internal identifiers (module/class names, QSettings namespace, Qt resource prefix) remain for compatibility and are not the public product name.
+
+---
+
+## 11. Troubleshooting
+
+| Issue | What to check |
+|---|---|
+| Plugin does not appear | Confirm ZIP top-level folder is `wind_site_select/` and Plugin Manager refresh |
+| Import / load error | Check the Python error log; ensure QGIS provides GDAL and Processing |
+| Empty wind/DEM path | Provide a valid file or map layer — no automatic sample raster is used |
+| MCA criteria not restored | Save the QGIS project first; unsaved projects cannot use project-scoped persistence |
+| Stale spatial polygons | Prefer re-running spatial filter; check `results/current_run.json` |
+| Excel report missing | Install openpyxl into the QGIS Python environment, or use CSV export |
+| Destination GPKG locked | Close layers using the file and retry; previous output is left unchanged |
+
+---
+
+## 12. Issues and support
+
+For bugs and public feature requests, please open a GitHub Issue:
+
+https://github.com/MehrdadFard/WindSiteSelect/issues
+
+When reporting a bug, include:
+
+- QGIS version and OS
+- Plugin version from Plugin Manager / `metadata.txt`
+- Steps to reproduce
+- Relevant Log Messages panel entries (category may still show the legacy tag `WindSuitability`)
+
+Do not send confidential project data unless you intend to share it.
+
+---
+
+## 13. Contact
+
+**Contact:** greensite.ai@gmail.com
+
+You can use this email for:
+
+- General inquiries
+- Collaboration proposals
+- Custom GIS development requests
+- Professional services
+
+For bugs and public feature requests, prefer [GitHub Issues](https://github.com/MehrdadFard/WindSiteSelect/issues) so that discussions remain visible to other users.
+
+Repository: https://github.com/MehrdadFard/WindSiteSelect
+
+---
+
+## 14. License
+
+**License:** [GPL-2.0-or-later](LICENSE) (GNU General Public License version 2 or any later version).
+
+The full license text is in the repository file [`LICENSE`](LICENSE). Wind Site Select is free software: you may redistribute and/or modify it under the terms of the GPL. There is no warranty. See the license text for permissions, conditions, and the disclaimer of warranty.
+
+This open-source license is compatible with the QGIS Official Plugin Repository requirement for GPLv2 or later.

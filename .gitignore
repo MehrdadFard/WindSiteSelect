@@ -1,0 +1,27 @@
+# Python bytecode / caches
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# OS junk
+.DS_Store
+Thumbs.db
+
+# Session / failed-download artifacts (keep on disk; exclude from Git)
+replay_pid*.log
+/WindSpeed_100m.tif
+
+# Large Germany sample rasters (provenance TBD; keep on disk for local demo)
+/data/germany_windspeed.tif
+/data/germany_bathymetry.tif
+/data/germany_windspeed.tif.aux.xml
+/data/germany_bathymetry.tif.aux.xml
+
+# Internal AST/export dumps (not required at runtime)
+/extract_prospect_workflow.py
+/prospect_area_workflow_SOURCE_EXPORT.py
+
+# Release packaging outputs (never ship inside plugin ZIP)
+/dist/

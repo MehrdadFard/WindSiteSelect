@@ -1,0 +1,40 @@
+# This file contains metadata for your plugin.
+# Mandatory items:
+
+[general]
+name=Wind Site Select
+qgisMinimumVersion=3.22
+qgisMaximumVersion=4.99
+description=A QGIS plugin for wind energy site suitability assessment, spatial filtering, and multi-criteria decision analysis.
+version=0.3.0
+author=Mehrdad Fard
+email=greensite.ai@gmail.com
+license=GPL-2.0-or-later
+
+about=Wind Site Select is a GIS-based wind energy site selection tool for professional GIS users. It supports AOI definition, wind and depth/bathymetry screening, spatial filtering with exclusion and inclusion constraints, and multi-criteria analysis (MCA) with criteria weights, raster/vector outputs, and optional Excel/CSV reporting. It does not perform bankable energy-yield calculations and does not replace engineering, environmental, grid-connection, or permitting studies. Users must supply appropriate source datasets; no regional sample rasters are selected automatically.
+
+tracker=https://github.com/MehrdadFard/WindSiteSelect/issues
+repository=https://github.com/MehrdadFard/WindSiteSelect
+# End of mandatory metadata
+
+# Recommended items:
+
+hasProcessingProvider=no
+changelog=0.3.0: First public release candidate as Wind Site Select. Spatial results lifecycle with authoritative run manifests, MCA criteria persistence, GPKG WAL-safe publication, packaging under package id wind_site_select, and GPL-2.0-or-later licensing.
+
+# Tags are comma separated with spaces allowed
+tags=wind energy, site selection, site suitability, GIS, spatial analysis, multi-criteria analysis, MCA, offshore, onshore, suitability
+
+homepage=https://github.com/MehrdadFard/WindSiteSelect#readme
+category=Plugins
+icon=icon.png
+# experimental flag — keep True until public repository links are finalized
+experimental=True
+
+# deprecated flag (applies to the whole plugin, not just a single version)
+deprecated=False
+
+# plugin_dependencies=
+
+# If the plugin can run on QGIS Server.
+server=False
