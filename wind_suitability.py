@@ -879,6 +879,44 @@ class WindSuitability:
             _rl.ensure_results_layout(self.results_dir)
         except Exception:
             pass
+        self._remember_results_root()
+
+    def _remember_results_root(self):
+        """Persist the durable results/ directory so MCA can resolve the current spatial run after UI resets."""
+        root = getattr(self, "results_dir", None)
+        if not root or not os.path.isdir(root):
+            return
+        try:
+            QSettings().setValue("wind_site_select/last_results_root", self._normalize_path(root))
+        except Exception:
+            pass
+
+    def _restore_results_root_from_settings(self):
+        """
+        Recover results_dir/output_dir when in-memory paths were cleared (dialog reopen/reset).
+        Does not invent spatial rasters — only restores where to look for the current-run manifest.
+        """
+        if self.results_dir and os.path.isdir(self.results_dir):
+            return self._normalize_path(self.results_dir)
+        try:
+            remembered = QSettings().value("wind_site_select/last_results_root", "", type=str)
+        except Exception:
+            remembered = ""
+        remembered = self._normalize_path(remembered) if remembered else None
+        if remembered and os.path.isdir(remembered):
+            self.results_dir = remembered
+            parent = os.path.dirname(remembered)
+            if os.path.basename(remembered).lower() == "results" and parent:
+                self.output_dir = self._normalize_path(parent)
+                temp_candidate = self._normalize_path(os.path.join(parent, "temp"))
+                if os.path.isdir(temp_candidate) or parent:
+                    self.temp_dir = temp_candidate
+                    try:
+                        os.makedirs(self.temp_dir, exist_ok=True)
+                    except Exception:
+                        pass
+            return remembered
+        return None
 
     # ------------------------------------------------------------------
     # Phase 1.4.3 – canonical results root, manifest, safe publication
@@ -886,8 +924,19 @@ class WindSuitability:
 
     def get_canonical_results_root(self):
         """Durable results root (output_dir/results). Prefer user output folder; never home UUID dirs."""
+        if not (self.results_dir and os.path.isdir(self.results_dir)):
+            self._restore_results_root_from_settings()
         results = self.get_plugin_results_dir()
+        # Prefer an actual .../results directory; avoid treating parent output_dir as the root.
         if results and os.path.isdir(results):
+            base = os.path.basename(self._normalize_path(results)).lower()
+            if base != "results" and self.results_dir and os.path.isdir(self.results_dir):
+                results = self.results_dir
+            elif base != "results":
+                candidate = self._normalize_path(os.path.join(results, "results"))
+                if os.path.isdir(candidate):
+                    results = candidate
+                    self.results_dir = candidate
             try:
                 _rl.ensure_results_layout(results)
             except Exception:
@@ -1211,6 +1260,8 @@ class WindSuitability:
 
     def _apply_manifest_paths_to_session(self):
         """Restore session path pointers from current_run.json when files exist."""
+        # Recover durable results root before loading the manifest (UI reset clears in-memory dirs).
+        self._restore_results_root_from_settings()
         data, err = self._load_current_run_manifest()
         if not data:
             return False, err or "No current-run manifest"
@@ -1229,6 +1280,23 @@ class WindSuitability:
             restored.append("spatial_filter_polygons_path")
         if excl and os.path.isfile(excl):
             self.spatial_filter_exclude_mask_path = excl
+        # Restore analysis master paths from spatial input_refs when present
+        refs = sf.get("input_refs") if isinstance(sf.get("input_refs"), dict) else {}
+        for key, attr in (
+            ("wind_master", "wind_master_path"),
+            ("wind_result", "wind_result_path"),
+            ("prospect", "prospect_result_path"),
+            ("prospect_raster", "prospect_result_path"),
+        ):
+            rel_or_abs = refs.get(key)
+            if not rel_or_abs:
+                continue
+            cand = _rl.path_abs_from_root(root, rel_or_abs, confine=False)
+            if not cand:
+                cand = self._normalize_path(rel_or_abs)
+            if cand and os.path.isfile(cand) and not getattr(self, attr, None):
+                setattr(self, attr, cand)
+                restored.append(attr)
         mca = data.get("mca") or {}
         grid = _rl.path_abs_from_root(root, mca.get("grid_scores")) if mca else None
         smap = _rl.path_abs_from_root(root, mca.get("suitability_map")) if mca else None
@@ -1242,6 +1310,8 @@ class WindSuitability:
             # Point MCA output dir at the durable MCA run folder when present
             if grid:
                 self.mca_output_dir = self._normalize_path(os.path.dirname(grid))
+        if sf.get("run_id"):
+            self._current_spatial_run_id = sf.get("run_id")
         msg = "Restored: {}".format(", ".join(restored) if restored else "(none)")
         if missing:
             msg += "; missing referenced files: {}".format(", ".join(str(m) for m in missing[:5]))
@@ -2483,18 +2553,34 @@ class WindSuitability:
             if hasattr(self.dlg, 'btnAddSlopeCriterion'):
                 self.dlg.btnAddSlopeCriterion.clicked.connect(self.add_slope_criterion)
 
-            # MCA criteria import/export + explicit new analysis (Phase 1.4.3)
+            # MCA criteria save/load + explicit new analysis (Phase 1.4.3)
+            btn_export_crit = getattr(self.dlg, "btn_export_criteria", None)
+            btn_import_crit = getattr(self.dlg, "btn_import_criteria", None)
+            btn_new_mca = getattr(self.dlg, "btn_new_mca_analysis", None)
+            if btn_export_crit is None or btn_import_crit is None or btn_new_mca is None:
+                self._ensure_mca_criteria_toolbar_buttons()
             btn_export_crit = getattr(self.dlg, "btn_export_criteria", None)
             btn_import_crit = getattr(self.dlg, "btn_import_criteria", None)
             btn_new_mca = getattr(self.dlg, "btn_new_mca_analysis", None)
             if btn_export_crit is not None:
+                try:
+                    btn_export_crit.clicked.disconnect()
+                except Exception:
+                    pass
                 btn_export_crit.clicked.connect(self.export_criteria_json)
             if btn_import_crit is not None:
+                try:
+                    btn_import_crit.clicked.disconnect()
+                except Exception:
+                    pass
                 btn_import_crit.clicked.connect(self.import_criteria_json)
             if btn_new_mca is not None:
+                try:
+                    btn_new_mca.clicked.disconnect()
+                except Exception:
+                    pass
                 btn_new_mca.clicked.connect(self.start_new_mca_analysis)
-            if btn_export_crit is None or btn_import_crit is None or btn_new_mca is None:
-                self._ensure_mca_criteria_toolbar_buttons()
+            self._configure_decision_making_ux()
             
             # Setup weights table
             self.setup_weights_table()
@@ -2577,30 +2663,144 @@ class WindSuitability:
         self.add_basemap()
         self.dlg.show()
 
-    def _ensure_mca_criteria_toolbar_buttons(self):
-        """Add Import/Export/New MCA buttons next to validate when missing from the .ui file."""
-        if not self.dlg or not hasattr(self.dlg, "btn_validate_criteria"):
+    def _configure_decision_making_ux(self):
+        """Apply Decision Making button labels, tooltips, and MCA workflow guidance."""
+        if not self.dlg:
             return
-        parent = self.dlg.btn_validate_criteria.parentWidget()
-        layout = parent.layout() if parent else None
+        specs = (
+            (
+                "btn_add_layer_to_table",
+                self.tr("Add Layer"),
+                self.tr("Add a raster layer already loaded in the current QGIS project as an MCA criterion."),
+            ),
+            (
+                "btn_add_layer_from_file",
+                self.tr("Add Raster Criterion..."),
+                self.tr("Browse for a raster file and add it as a new MCA criterion."),
+            ),
+            (
+                "btn_remove_layer_from_table",
+                self.tr("Remove Layer"),
+                self.tr("Remove the selected criterion row(s) from the table."),
+            ),
+            (
+                "btn_normalize_weights",
+                self.tr("Normalize Weights"),
+                self.tr("Rescale included criterion weights so they sum to 100%."),
+            ),
+            (
+                "btn_export_criteria",
+                self.tr("Save Criteria Setup..."),
+                self.tr("Save the current criteria, weights, roles and inclusion settings to a JSON file."),
+            ),
+            (
+                "btn_import_criteria",
+                self.tr("Load Criteria Setup..."),
+                self.tr("Restore a previously saved MCA criteria configuration from a JSON file."),
+            ),
+            (
+                "btn_new_mca_analysis",
+                self.tr("New MCA Analysis"),
+                self.tr("Start a new MCA analysis and clear the current criteria configuration."),
+            ),
+        )
+        for name, text, tip in specs:
+            btn = getattr(self.dlg, name, None)
+            if btn is None:
+                continue
+            try:
+                btn.setText(text)
+                btn.setToolTip(tip)
+            except Exception:
+                pass
+        lbl_cfg = getattr(self.dlg, "lbl_criteria_configuration", None)
+        if lbl_cfg is not None:
+            try:
+                lbl_cfg.setText(self.tr("Criteria Configuration"))
+            except Exception:
+                pass
+        hint = getattr(self.dlg, "lbl_mca_workflow_hint", None)
+        workflow = self.tr(
+            "Workflow: Complete Prospect Analysis and Spatial Filtering first, "
+            "then generate the MCA analysis grid and run MCA."
+        )
+        if hint is not None:
+            try:
+                hint.setText(workflow)
+                hint.setWordWrap(True)
+            except Exception:
+                pass
+        else:
+            # Fallback when older .ui is loaded without the workflow label
+            try:
+                tab_layout = getattr(self.dlg, "verticalLayout_tab9", None)
+                if tab_layout is not None:
+                    hint = QLabel(workflow)
+                    hint.setObjectName("lbl_mca_workflow_hint")
+                    hint.setWordWrap(True)
+                    tab_layout.insertWidget(0, hint)
+                    self.dlg.lbl_mca_workflow_hint = hint
+            except Exception:
+                pass
+        run_btn = getattr(self.dlg, "btn_run_mca", None)
+        if run_btn is not None:
+            try:
+                run_btn.setToolTip(
+                    self.tr(
+                        "Requires: Spatial Filtering (master/suitable mask), "
+                        "an MCA analysis grid, and at least one included criterion."
+                    )
+                )
+            except Exception:
+                pass
+
+    def _ensure_mca_criteria_toolbar_buttons(self):
+        """Add Save/Load/New MCA buttons when missing from the .ui file."""
+        if not self.dlg:
+            return
+        # Prefer the Decision Making side-button column; fall back to validate row.
+        layout = None
+        side = getattr(self.dlg, "verticalLayout_weights_buttons", None)
+        if side is not None:
+            layout = side
+        elif hasattr(self.dlg, "btn_validate_criteria"):
+            parent = self.dlg.btn_validate_criteria.parentWidget()
+            layout = parent.layout() if parent else None
         if layout is None:
             return
+        if getattr(self.dlg, "lbl_criteria_configuration", None) is None:
+            lbl = QLabel(self.tr("Criteria Configuration"))
+            lbl.setObjectName("lbl_criteria_configuration")
+            try:
+                font = lbl.font()
+                font.setBold(True)
+                lbl.setFont(font)
+            except Exception:
+                pass
+            layout.addWidget(lbl)
+            self.dlg.lbl_criteria_configuration = lbl
         if getattr(self.dlg, "btn_export_criteria", None) is None:
-            btn = QPushButton(self.tr("Export Criteria"))
+            btn = QPushButton(self.tr("Save Criteria Setup..."))
             btn.setObjectName("btn_export_criteria")
-            btn.clicked.connect(self.export_criteria_json)
+            btn.setToolTip(
+                self.tr("Save the current criteria, weights, roles and inclusion settings to a JSON file.")
+            )
             layout.addWidget(btn)
             self.dlg.btn_export_criteria = btn
         if getattr(self.dlg, "btn_import_criteria", None) is None:
-            btn = QPushButton(self.tr("Import Criteria"))
+            btn = QPushButton(self.tr("Load Criteria Setup..."))
             btn.setObjectName("btn_import_criteria")
-            btn.clicked.connect(self.import_criteria_json)
+            btn.setToolTip(
+                self.tr("Restore a previously saved MCA criteria configuration from a JSON file.")
+            )
             layout.addWidget(btn)
             self.dlg.btn_import_criteria = btn
         if getattr(self.dlg, "btn_new_mca_analysis", None) is None:
             btn = QPushButton(self.tr("New MCA Analysis"))
             btn.setObjectName("btn_new_mca_analysis")
-            btn.clicked.connect(self.start_new_mca_analysis)
+            btn.setToolTip(
+                self.tr("Start a new MCA analysis and clear the current criteria configuration.")
+            )
             layout.addWidget(btn)
             self.dlg.btn_new_mca_analysis = btn
 
@@ -2626,7 +2826,7 @@ class WindSuitability:
             scope, saved = self._project_qsettings_scope()
             if not saved:
                 self.log_mca_message(
-                    "Project unsaved: MCA criteria not auto-restored. Use Export/Import Criteria JSON."
+                    "Project unsaved: MCA criteria not auto-restored. Use Save/Load Criteria Setup JSON."
                 )
             elif err:
                 self.log_mca_message("No project-scoped MCA criteria to restore ({})".format(err))
@@ -3358,7 +3558,9 @@ class WindSuitability:
 
     def _get_clipped_wind_master_path(self):
         """
-        Clipped wind raster is the preferred master grid for the full workflow.
+        Clipped wind raster used as early-pipeline master grid.
+        Only session wind_master_path / wind_result_path — not the raw wind input line edit
+        (which may still point at an unclipped source raster).
         """
         candidates = []
         p_master = getattr(self, "wind_master_path", None)
@@ -3367,13 +3569,6 @@ class WindSuitability:
         p0 = getattr(self, "wind_result_path", None)
         if p0:
             candidates.append(p0)
-        try:
-            if hasattr(self.dlg, "lineEditWindPath"):
-                p1 = (self.dlg.lineEditWindPath.text() or "").strip()
-                if p1:
-                    candidates.append(p1)
-        except Exception:
-            pass
         for p in candidates:
             pn = self._normalize_path(p)
             if pn and os.path.exists(pn):
@@ -3384,36 +3579,58 @@ class WindSuitability:
 
     def get_master_reference_raster_for_decision_making(self):
         """
-        Get the master reference raster for Decision Making / MCA criterion rasterization.
-        Decision Making must NOT depend on the MCA grid (which is created later). Instead use:
-        - Preferred: spatial_filtered.tif (same dir as prospect output)
-        - Fallback: prospect_area.tif = prospect_result_path
+        Master reference raster for Decision Making / MCA criterion alignment.
+
+        After Spatial Filtering, the authoritative analysis grid is the *current*
+        spatial_filtered.tif (session → manifest → logged alias). Do not invent
+        unrelated old rasters.
+
+        Priority:
+        1. Current spatial_filtered.tif (final suitable mask for this run)
+        2. Prospect area raster (pre-spatial, same grid family)
+        3. Clipped wind master (early pipeline only)
+
         Returns (QgsRasterLayer or None, path or None, source_name str for logging).
         """
-        # STRICT priority: clipped wind raster is master grid for all MCA raster work.
-        wind_master = self._get_clipped_wind_master_path()
-        if wind_master and os.path.exists(wind_master):
-            layer = QgsRasterLayer(wind_master, "MasterGrid", "gdal")
-            if layer.isValid() and layer.width() > 0 and layer.height() > 0:
-                return layer, wind_master, "Clipped_Wind_Master"
+        # Ensure durable results root is available before resolving the current spatial run
+        try:
+            self._restore_results_root_from_settings()
+        except Exception:
+            pass
 
-        # Preferred: authoritative spatial_filtered.tif from session/manifest
         spatial_filtered_path = self._resolve_final_suitable_mask_raster_path()
         if spatial_filtered_path and os.path.exists(spatial_filtered_path):
             layer = QgsRasterLayer(spatial_filtered_path, "MasterGrid", "gdal")
             if layer.isValid() and layer.width() > 0 and layer.height() > 0:
                 return layer, spatial_filtered_path, self.SPATIAL_FILTERED_TIF
 
-        prospect_path = getattr(self, 'prospect_result_path', None)
-        if not prospect_path or not os.path.exists(prospect_path):
-            return None, None, None
-        # Fallback: prospect_area.tif (not a silent unrelated spatial_filtered beside prospect)
-        pa_path = self._normalize_path(prospect_path)
-        if os.path.exists(pa_path):
+        prospect_path = getattr(self, "prospect_result_path", None)
+        if prospect_path and os.path.exists(prospect_path):
+            pa_path = self._normalize_path(prospect_path)
             layer = QgsRasterLayer(pa_path, "MasterGrid", "gdal")
             if layer.isValid() and layer.width() > 0 and layer.height() > 0:
                 return layer, pa_path, "Prospect_Area"
+
+        wind_master = self._get_clipped_wind_master_path()
+        if wind_master and os.path.exists(wind_master):
+            layer = QgsRasterLayer(wind_master, "MasterGrid", "gdal")
+            if layer.isValid() and layer.width() > 0 and layer.height() > 0:
+                return layer, wind_master, "Clipped_Wind_Master"
+
         return None, None, None
+
+    def _require_analysis_master_grid_path(self):
+        """
+        Path of the authoritative MCA/analysis master grid.
+        Prefers current Spatial Filtering output; never silently picks an unrelated raster.
+        """
+        _layer, path, source = self.get_master_reference_raster_for_decision_making()
+        if path and os.path.exists(path):
+            return self._normalize_path(path), source or "master"
+        raise RuntimeError(
+            "No master reference raster found. Complete Spatial Filtering first so criteria "
+            "can be aligned to the current analysis grid, then generate the MCA grid and run the analysis."
+        )
 
     def _rasterize_vector_to_reference_grid(self, vector_path, reference_raster_path, output_raster_path, burn_value=1.0, layer_name=None, ref_info=None):
         """
@@ -4809,9 +5026,19 @@ class WindSuitability:
             session_polygons=getattr(self, "spatial_filter_polygons_path", None),
             manifest=data,
         )
-        if out.get("raster") and out.get("source") in ("manifest", "session", "session+manifest"):
+        if out.get("raster") and out.get("source") in (
+            "manifest",
+            "session",
+            "session+manifest",
+            "alias",
+        ):
             self.spatial_filter_result_path = out["raster"]
-        if out.get("polygons") and out.get("source") in ("manifest", "session", "session+manifest"):
+        if out.get("polygons") and out.get("source") in (
+            "manifest",
+            "session",
+            "session+manifest",
+            "alias",
+        ):
             self.spatial_filter_polygons_path = out["polygons"]
         if out.get("alias_used"):
             QgsMessageLog.logMessage(
@@ -6047,7 +6274,12 @@ class WindSuitability:
             staging_polygons=polygon_path,
             staging_exclude=exclude_mask_path if os.path.isfile(exclude_mask_path) else None,
             reference_path=prospect_path,
-            input_refs={"prospect_raster": prospect_path},
+            input_refs={
+                "prospect": prospect_path,
+                "prospect_raster": prospect_path,
+                "wind_master": getattr(self, "wind_master_path", None),
+                "wind_result": getattr(self, "wind_result_path", None),
+            },
             run_dirs=run_dirs,
         )
         if not publish_ok:
@@ -12683,33 +12915,48 @@ TIPS:
             table.setSelectionMode(3)  # ExtendedSelection
 
     def add_layer_from_file_to_weights_table(self):
-        """Add a layer from file system (browse) to the weights table. Supports vector and raster files."""
+        """Browse for a raster file and append it as one MCA criterion (does not replace existing rows)."""
         if not hasattr(self.dlg, 'tbl_weights'):
             QMessageBox.warning(self.dlg, "Error", "Weights table not found in dialog.")
             return
         path, _ = QFileDialog.getOpenFileName(
             self.dlg,
-            self.tr("Select layer file"),
+            self.tr("Select raster criterion"),
             "",
-            self.tr("GeoPackage (*.gpkg);;Shapefile (*.shp);;GeoTIFF (*.tif *.tiff);;All supported (*.gpkg *.shp *.geojson *.tif *.tiff)")
+            self.tr(
+                "GeoTIFF (*.tif *.tiff);;VRT (*.vrt);;"
+                "Raster files (*.tif *.tiff *.vrt *.img *.asc);;All Files (*)"
+            ),
         )
         if not path or not os.path.exists(path):
             return
         path = self._normalize_path(path)
+        if not path.lower().endswith(('.tif', '.tiff', '.vrt', '.img', '.asc')):
+            QMessageBox.warning(
+                self.dlg,
+                self.tr("Raster required"),
+                self.tr(
+                    "Add Raster Criterion only accepts raster files. "
+                    "Load a vector in QGIS and use Add Layer if you need conversion."
+                ),
+            )
+            return
         base = os.path.splitext(os.path.basename(path))[0]
-        layer = None
-        if path.lower().endswith(('.tif', '.tiff', '.vrt', '.img', '.asc')):
-            self._remove_raster_layers_for_disk_path(path)
-            layer = QgsRasterLayer(path, base, "gdal")
-        else:
-            layer = QgsVectorLayer(path, base, "ogr")
+        self._remove_raster_layers_for_disk_path(path)
+        layer = QgsRasterLayer(path, base, "gdal")
         if not layer or not layer.isValid():
-            QMessageBox.warning(self.dlg, "Error", "Could not load layer from file. Check format and path.")
+            QMessageBox.warning(self.dlg, "Error", "Could not load raster from file. Check format and path.")
             return
         QgsProject.instance().addMapLayer(layer)
-        if isinstance(layer, QgsRasterLayer):
-            self._refresh_map_after_raster_layer_added(layer)
+        self._refresh_map_after_raster_layer_added(layer)
+        # Append only — never clear existing criteria rows
+        before_count = self.dlg.tbl_weights.rowCount()
         self.add_layer_to_weights_table(from_file_layer=layer)
+        after_count = self.dlg.tbl_weights.rowCount()
+        if after_count < before_count + 1:
+            self.log_mca_message(
+                "WARNING: Add Raster Criterion did not append a new table row (existing criteria unchanged)."
+            )
 
     def _safe_layer_name(self, layer):
         """Get layer name whether QGIS exposes it as .name() or .name property. Safe if layer is None, bool, or wrong type."""
@@ -13311,10 +13558,19 @@ TIPS:
             self.decision_making_layers = []
             print(f"  Initialized decision_making_layers list")
         
+        layer_path = None
+        try:
+            layer_path = selected_layer.source() if hasattr(selected_layer, "source") else None
+        except Exception:
+            layer_path = None
         self.decision_making_layers.append({
             'layer': selected_layer,
-            'row': row
+            'row': row,
+            'layer_name': layer_name,
+            'layer_id': selected_layer.id() if hasattr(selected_layer, "id") else None,
+            'layer_path': layer_path,
         })
+        self._reindex_decision_making_layers()
         print(f"  ✓ Stored layer reference in decision_making_layers (total: {len(self.decision_making_layers)})")
         
         print(f"  ✓ Successfully added layer '{layer_name}' to weights table at row {row}")
@@ -13531,7 +13787,19 @@ TIPS:
         table.setCellWidget(row, 4, include_checkbox)
         if not hasattr(self, 'decision_making_layers'):
             self.decision_making_layers = []
-        self.decision_making_layers.append({'layer': suitability_layer, 'row': row})
+        slope_path = None
+        try:
+            slope_path = suitability_layer.source() if hasattr(suitability_layer, "source") else None
+        except Exception:
+            slope_path = None
+        self.decision_making_layers.append({
+            'layer': suitability_layer,
+            'row': row,
+            'layer_name': layer_name,
+            'layer_id': suitability_layer.id() if hasattr(suitability_layer, "id") else None,
+            'layer_path': slope_path,
+        })
+        self._reindex_decision_making_layers()
         QMessageBox.information(
             self.dlg,
             "Slope added",
@@ -13581,15 +13849,13 @@ TIPS:
             # Remove rows
             for row in row_indices:
                 table.removeRow(row)
-                # Update stored layer references
+                # Update stored layer references (tolerate missing row keys from older sessions)
                 self.decision_making_layers = [
                     item for item in self.decision_making_layers 
-                    if item['row'] != row
+                    if item.get('row') != row
                 ]
-                # Update row indices for remaining items
-                for item in self.decision_making_layers:
-                    if item['row'] > row:
-                        item['row'] -= 1
+            # Rebuild row indices from the live table so restore/import/add stay consistent
+            self._reindex_decision_making_layers()
             
             QMessageBox.information(self.dlg, "Removed", 
                                   f"Removed {len(row_indices)} layer(s) from the table.")
@@ -14021,28 +14287,56 @@ TIPS:
             if include_widget and isinstance(include_widget, QCheckBox):
                 include = include_widget.isChecked()
             
-            # Find the actual layer object
+            # Find the stored layer reference for this table row.
+            # Prefer explicit row mapping; fall back to name/id, then positional index.
             layer_obj = None
             layer_path = None
             layer_id = None
-            
-            for item in self.decision_making_layers:
-                if item['row'] == row:
-                    layer_obj = item.get('layer')
-                    layer_id = item.get('layer_id')
+            matched_item = None
+
+            for item in (self.decision_making_layers or []):
+                if item.get("row") == row:
+                    matched_item = item
                     break
-            
-            # Resolve a fresh, valid layer from the project to avoid stale/deleted references
-            layer_obj = _resolve_raster(layer_id, layer_name)
-            
-            # If resolved, update ids and paths
+            if matched_item is None:
+                for item in (self.decision_making_layers or []):
+                    if item.get("layer_name") == layer_name:
+                        matched_item = item
+                        break
+            if matched_item is None and 0 <= row < len(self.decision_making_layers or []):
+                matched_item = self.decision_making_layers[row]
+
+            if matched_item is not None:
+                layer_obj = matched_item.get("layer")
+                layer_id = matched_item.get("layer_id")
+                layer_path = matched_item.get("layer_path")
+                # Keep mapping healthy for subsequent remove/restore operations
+                matched_item["row"] = row
+
+            # Prefer a fresh project layer; keep the stored valid raster if project lookup fails
+            resolved = _resolve_raster(layer_id, layer_name)
+            if resolved is not None:
+                layer_obj = resolved
+            elif not (
+                layer_obj
+                and isinstance(layer_obj, QgsRasterLayer)
+                and layer_obj.isValid()
+            ):
+                layer_obj = None
+
             if layer_obj:
                 layer_id = layer_obj.id()
-                if hasattr(layer_obj, 'source'):
+                if hasattr(layer_obj, "source"):
                     layer_path = layer_obj.source()
-                elif hasattr(layer_obj, 'dataProvider') and hasattr(layer_obj.dataProvider(), 'dataSourceUri'):
+                elif hasattr(layer_obj, "dataProvider") and hasattr(
+                    layer_obj.dataProvider(), "dataSourceUri"
+                ):
                     layer_path = layer_obj.dataProvider().dataSourceUri()
-            
+                if matched_item is not None:
+                    matched_item["layer"] = layer_obj
+                    matched_item["layer_id"] = layer_id
+                    matched_item["layer_path"] = layer_path
+
             criteria_list.append({
                 'layer_name': layer_name,
                 'weight': weight,
@@ -14249,7 +14543,7 @@ TIPS:
         
         filename, _ = QFileDialog.getSaveFileName(
             self.dlg,
-            "Export Criteria to JSON",
+            self.tr("Save Criteria Setup"),
             "",
             "JSON Files (*.json);;All Files (*)"
         )
@@ -14271,28 +14565,28 @@ TIPS:
             self._persist_criteria_to_project_settings(normalized)
             QMessageBox.information(
                 self.dlg,
-                "Export Successful",
-                "Criteria data exported successfully to:\n{}\n\nExported {} criteria.".format(
+                self.tr("Criteria Setup Saved"),
+                self.tr("Criteria setup saved to:\n{}\n\nSaved {} criteria.").format(
                     filename, len(normalized["criteria"])
                 ),
             )
         except Exception as e:
             QMessageBox.critical(
                 self.dlg,
-                "Export Failed",
-                "Failed to export criteria to JSON:\n{}".format(e),
+                self.tr("Save Failed"),
+                self.tr("Failed to save criteria setup:\n{}").format(e),
             )
         finally:
             _rl.safe_remove_tree(staging_dir, protected_paths=self._protected_manifest_paths())
 
     def import_criteria_json(self):
-        """Import MCA criteria/weights from JSON after full validation (no partial overwrite)."""
+        """Load a saved MCA criteria setup from JSON after full validation (no partial overwrite)."""
         if not hasattr(self.dlg, "tbl_weights"):
             QMessageBox.warning(self.dlg, "Error", "Weights table not found in dialog.")
             return
         filename, _ = QFileDialog.getOpenFileName(
             self.dlg,
-            "Import Criteria from JSON",
+            self.tr("Load Criteria Setup"),
             "",
             "JSON Files (*.json);;All Files (*)",
         )
@@ -14302,23 +14596,27 @@ TIPS:
         if not ok:
             QMessageBox.warning(
                 self.dlg,
-                "Import Failed",
-                "Criteria JSON rejected; current configuration left unchanged.\n{}".format(err),
+                self.tr("Load Failed"),
+                self.tr(
+                    "Criteria setup rejected; current configuration left unchanged.\n{}"
+                ).format(err),
             )
             return
         applied, apply_err = self._apply_criteria_payload(payload, show_messages=True)
         if not applied:
             QMessageBox.warning(
                 self.dlg,
-                "Import Failed",
-                "Could not apply criteria; current configuration left unchanged.\n{}".format(apply_err),
+                self.tr("Load Failed"),
+                self.tr(
+                    "Could not apply criteria setup; current configuration left unchanged.\n{}"
+                ).format(apply_err),
             )
             return
         self._persist_criteria_to_project_settings(payload)
         QMessageBox.information(
             self.dlg,
-            "Import Successful",
-            "Imported {} criteria from:\n{}".format(len(payload["criteria"]), filename),
+            self.tr("Criteria Setup Loaded"),
+            self.tr("Loaded {} criteria from:\n{}").format(len(payload["criteria"]), filename),
         )
 
     def _project_qsettings_scope(self):
@@ -14443,10 +14741,10 @@ TIPS:
         except Exception as e:
             return None, str(e)
 
-    def _apply_criteria_payload(self, payload, show_messages=False):
+    def _apply_criteria_payload(self, payload, show_messages=False, _rollback=False):
         """
         Replace weights table from a validated payload.
-        Does not partially mutate on failure. Does not store temporary layer object refs.
+        Does not partially mutate on failure. Restores the prior criteria snapshot on error.
         """
         if not hasattr(self.dlg, "tbl_weights"):
             return False, "Weights table missing"
@@ -14455,8 +14753,12 @@ TIPS:
             return False, err
 
         table = self.dlg.tbl_weights
-        previous_rows = table.rowCount()
-        previous_decision = list(self.decision_making_layers or [])
+        previous_snapshot = None
+        if not _rollback:
+            try:
+                previous_snapshot = self._serialize_criteria_for_persistence()
+            except Exception:
+                previous_snapshot = None
         try:
             self._suppress_weight_cell_signals = True
             # Clear table completely first
@@ -14471,10 +14773,19 @@ TIPS:
                     if not layer.isValid():
                         layer = None
                         warnings.append("Could not open layer for '{}': {}".format(item.get("layer_name"), layer_path))
+                    else:
+                        # Register in the project so MCA can resolve layers by id/name
+                        try:
+                            QgsProject.instance().addMapLayer(layer, False)
+                        except Exception:
+                            pass
+                        item = dict(item)
+                        item["layer_id"] = layer.id()
                 elif layer_path:
                     warnings.append("Missing layer file for '{}': {}".format(item.get("layer_name"), layer_path))
                 # Reuse existing add-row helpers when possible via decision_making_layers + table API
                 self._append_weights_table_row_from_criterion(item, layer)
+            self._reindex_decision_making_layers()
             self._suppress_weight_cell_signals = False
             if show_messages and warnings:
                 try:
@@ -14488,19 +14799,78 @@ TIPS:
                     self.log_mca_message("  " + w)
             return True, ""
         except Exception as e:
-            # Roll back to previous empty/safe state rather than a half-filled table
-            try:
-                table.setRowCount(0)
-                self.decision_making_layers = previous_decision
-                # Best-effort: cannot always restore previous table cells without a snapshot
-            except Exception:
-                pass
             self._suppress_weight_cell_signals = False
+            # Restore prior criteria so failed import/restore does not wipe the table
+            if not _rollback and previous_snapshot and previous_snapshot.get("criteria"):
+                restored, _restore_err = self._apply_criteria_payload(
+                    previous_snapshot, show_messages=False, _rollback=True
+                )
+                if not restored:
+                    try:
+                        table.setRowCount(0)
+                        self.decision_making_layers = []
+                    except Exception:
+                        pass
+            else:
+                try:
+                    table.setRowCount(0)
+                    self.decision_making_layers = []
+                except Exception:
+                    pass
             return False, str(e)
+
+    def _reindex_decision_making_layers(self):
+        """
+        Keep decision_making_layers[].row aligned with tbl_weights row indices.
+        Matches interactive Add Layer semantics used by remove/extract helpers.
+        """
+        if not hasattr(self, "decision_making_layers") or self.decision_making_layers is None:
+            self.decision_making_layers = []
+        table = getattr(getattr(self, "dlg", None), "tbl_weights", None)
+        if table is None:
+            return
+        entries = list(self.decision_making_layers)
+        rebuilt = []
+        used = set()
+        for row in range(table.rowCount()):
+            name_item = table.item(row, 1)
+            name = name_item.text() if name_item else None
+            match_idx = None
+            if name:
+                for i, ent in enumerate(entries):
+                    if i in used:
+                        continue
+                    if ent.get("layer_name") == name:
+                        match_idx = i
+                        break
+            if match_idx is None:
+                for i, ent in enumerate(entries):
+                    if i in used:
+                        continue
+                    if ent.get("row") == row:
+                        match_idx = i
+                        break
+            if match_idx is None:
+                for i, ent in enumerate(entries):
+                    if i not in used:
+                        match_idx = i
+                        break
+            if match_idx is None:
+                continue
+            used.add(match_idx)
+            ent = entries[match_idx]
+            ent["row"] = row
+            if name:
+                ent["layer_name"] = name
+            rebuilt.append(ent)
+        self.decision_making_layers = rebuilt
 
     def _append_weights_table_row_from_criterion(self, item, layer):
         """Insert one weights-table row from a validated criterion dict.
         Columns: Save?, Layer, Weight (%), Role, Include.
+
+        Stores the same row-mapping contract as interactive Add Layer:
+        decision_making_layers entries include {'layer', 'row', ...}.
         """
         table = self.dlg.tbl_weights
         row = table.rowCount()
@@ -14527,17 +14897,31 @@ TIPS:
         include_cb.setChecked(bool(item.get("include", True)))
         table.setCellWidget(row, 4, include_cb)
 
+        layer_id = item.get("layer_id")
+        layer_path = item.get("layer_path")
+        if layer is not None and getattr(layer, "isValid", lambda: False)():
+            try:
+                layer_id = layer.id()
+            except Exception:
+                pass
+            try:
+                layer_path = layer.source() if hasattr(layer, "source") else layer_path
+            except Exception:
+                pass
+
         entry = {
             "layer_name": item.get("layer_name"),
             "weight": float(item.get("weight", 0)),
             "role": role,
             "include": bool(item.get("include", True)),
             "save": bool(item.get("save", True)),
-            "layer_id": item.get("layer_id"),
-            "layer_path": item.get("layer_path"),
+            "layer_id": layer_id,
+            "layer_path": layer_path,
             "layer": layer,
+            "row": row,
         }
         self.decision_making_layers.append(entry)
+        self._reindex_decision_making_layers()
 
     def _update_manifest_after_successful_mca(self):
         root = self.get_canonical_results_root()
@@ -14568,14 +14952,18 @@ TIPS:
         no = QMessageBox.StandardButton.No if hasattr(QMessageBox, "StandardButton") else QMessageBox.No
         reply = QMessageBox.question(
             self.dlg,
-            "New MCA Analysis",
-            "Clear current MCA criteria and in-memory scores?\n"
-            "Files already saved on disk will not be deleted.",
+            self.tr("New MCA Analysis"),
+            self.tr(
+                "Clear the current MCA criteria configuration and in-memory scores?\n\n"
+                "This cannot be undone unless you previously used Save Criteria Setup.\n"
+                "Files already saved on disk will not be deleted."
+            ),
             yes | no,
             no,
         )
         if reply != yes:
-            return
+            # Cancel: leave table, decision_making_layers, and persistence unchanged
+            return False
         self.decision_making_layers = []
         self.mca_data_matrix = []
         self.mca_grid_layer = None
@@ -14590,12 +14978,15 @@ TIPS:
         try:
             self.iface.messageBar().pushMessage(
                 "Wind Site Select",
-                "MCA criteria cleared. Use Import Criteria or add layers to start a new analysis.",
+                self.tr(
+                    "MCA criteria cleared. Use Load Criteria Setup or add criteria to start a new analysis."
+                ),
                 level=Qgis.Info,
                 duration=5,
             )
         except Exception:
             pass
+        return True
 
     def remove_layer_from_weights_table(self):
         """Remove selected row(s) from the weights table"""
@@ -14639,15 +15030,13 @@ TIPS:
             # Remove rows
             for row in row_indices:
                 table.removeRow(row)
-                # Update stored layer references
+                # Update stored layer references (tolerate missing row keys from older sessions)
                 self.decision_making_layers = [
                     item for item in self.decision_making_layers 
-                    if item['row'] != row
+                    if item.get('row') != row
                 ]
-                # Update row indices for remaining items
-                for item in self.decision_making_layers:
-                    if item['row'] > row:
-                        item['row'] -= 1
+            # Rebuild row indices from the live table so restore/import/add stay consistent
+            self._reindex_decision_making_layers()
             
             QMessageBox.information(self.dlg, "Removed", 
                                   f"Removed {len(row_indices)} layer(s) from the table.")
@@ -16461,17 +16850,20 @@ TIPS:
         self.log_mca_message("")
         
         total_cells = self.mca_grid_layer.featureCount()
-        master_ref_layer, master_ref_path, _master_name = self.get_master_reference_raster_for_decision_making()
+        master_ref_layer, master_ref_path, master_name = self.get_master_reference_raster_for_decision_making()
         if not master_ref_layer or not master_ref_path:
             return None, (
-                "No master reference raster found for MCA. "
-                "Run Spatial Filter first so criteria can be aligned to one consistent analysis grid."
+                "No master reference raster found. Complete Spatial Filtering first so criteria "
+                "can be aligned to the current analysis grid, then generate the MCA grid and run the analysis."
             )
+        self.log_mca_message(
+            "Master analysis grid: {} ({})".format(master_name or "unknown", master_ref_path)
+        )
 
         if not self._resolve_final_suitable_mask_raster_path():
             return None, (
                 "Final Suitable Area raster (spatial_filtered.tif) not found. "
-                "Run Spatial Filters before MCA."
+                "Complete Spatial Filtering before MCA."
             )
 
         self.log_mca_message("")
@@ -16519,15 +16911,19 @@ TIPS:
                         os.path.join(tempfile.gettempdir(), "mca_aligned_{}_{}.tif".format(processed_criteria, uuid.uuid4().hex[:8]))
                     )
                     self._release_and_remove_path(aligned_temp)
-                    wind_master = self._require_wind_master_path()
-                    if self._rasters_have_identical_grid(layer_path, wind_master):
-                        self.log_mca_message("  ✓ Criterion already on master analysis grid (warp skipped)")
+                    master_grid, master_src = self._require_analysis_master_grid_path()
+                    if self._rasters_have_identical_grid(layer_path, master_grid):
+                        self.log_mca_message(
+                            "  ✓ Criterion already on master analysis grid ({}) (warp skipped)".format(master_src)
+                        )
                     else:
-                        if self._warp_raster_to_reference_grid(wind_master, layer_path, aligned_temp, nodata_value=MCA_NODATA):
+                        if self._warp_raster_to_reference_grid(master_grid, layer_path, aligned_temp, nodata_value=MCA_NODATA):
                             aligned_layer = QgsRasterLayer(aligned_temp, "{}_aligned".format(criterion_name), "gdal")
                             if aligned_layer.isValid():
                                 working_layer = aligned_layer
-                                self.log_mca_message("  ✓ Criterion aligned to master analysis grid")
+                                self.log_mca_message(
+                                    "  ✓ Criterion aligned to master analysis grid ({})".format(master_src)
+                                )
                             else:
                                 self.log_mca_message("  ERROR: aligned raster is invalid")
                                 continue
@@ -17194,6 +17590,40 @@ TIPS:
         
         return True, None
 
+    def _validate_mca_run_prerequisites(self):
+        """
+        Return (ok, actionable_message).
+        Uses existing resolvers only — never invents or silently substitutes stale aliases.
+        """
+        self._clear_stale_mca_layer_refs()
+        if not self._layer_cpp_alive(self.mca_grid_layer):
+            self.mca_grid_layer = None
+            return False, self.tr(
+                "Grid layer is missing or invalid. Generate the MCA analysis grid first."
+            )
+
+        master_layer, master_path, _name = self.get_master_reference_raster_for_decision_making()
+        if not master_layer or not master_path:
+            return False, self.tr(
+                "No master reference raster found. Complete Spatial Filtering first so criteria "
+                "can be aligned to the current analysis grid, then generate the MCA grid and run the analysis."
+            )
+
+        if not self._resolve_final_suitable_mask_raster_path():
+            return False, self.tr(
+                "Final Suitable Area raster (spatial_filtered.tif) not found. "
+                "Complete Spatial Filtering before running MCA."
+            )
+
+        criteria = self.extract_criteria_data() if hasattr(self, "extract_criteria_data") else []
+        included = [c for c in (criteria or []) if c.get("include")]
+        if not included:
+            return False, self.tr(
+                "No included criteria found. On the Decision Making tab, add criteria "
+                "(Add Layer / Add Raster Criterion / Load Criteria Setup) and mark Include."
+            )
+        return True, ""
+
     def run_mca_calculation(self):
         """
         Run the complete Grid-based Multi-Criteria Analysis (MCA) calculation.
@@ -17216,23 +17646,17 @@ TIPS:
         if not hasattr(self.dlg, 'txt_mca_log'):
             QMessageBox.warning(self.dlg, "Error", "MCA log text area not found.")
             return
-        
+
         # Clear previous log
         self.dlg.txt_mca_log.clear()
-        
-        # Safety check: Verify grid layer is still valid
-        # Safety check: Verify grid layer is still valid
-        self._clear_stale_mca_layer_refs()
-        if not self._layer_cpp_alive(self.mca_grid_layer):
-            self.mca_grid_layer = None
-            QMessageBox.warning(
-                self.dlg,
-                "No Grid",
-                "Grid layer is missing or invalid. Please generate the analysis grid first."
-            )
-            self.log_mca_message("ERROR: Grid layer is missing or invalid")
+
+        # Validate prerequisites with actionable messages (does not weaken resolvers)
+        ok_pre, pre_err = self._validate_mca_run_prerequisites()
+        if not ok_pre:
+            QMessageBox.warning(self.dlg, self.tr("MCA Prerequisites"), pre_err)
+            self.log_mca_message("ERROR: {}".format(pre_err))
             return
-        
+
         self.log_mca_message("=" * 50)
         self.log_mca_message("MCA CALCULATION STARTED")
         self.log_mca_message("=" * 50)

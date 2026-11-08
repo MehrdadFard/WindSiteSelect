@@ -557,7 +557,7 @@ def resolve_authoritative_spatial_paths(
     Never returns a prospect-directory candidate.
     Rejects mixing a canonical runs/ raster with a flat alias polygon.
     """
-    root = normalize_path(results_root)
+    root = normalize_path(results_root) if results_root else None
     out: Dict[str, Any] = {
         "run_id": None,
         "raster": None,
@@ -567,9 +567,8 @@ def resolve_authoritative_spatial_paths(
         "rejected_stale_alias_polygons": False,
         "notes": [],
     }
-    if not root:
-        return out
 
+    # Session paths are authoritative when present, even if results_root is unset.
     sr = normalize_path(session_raster) if session_raster else None
     sp = normalize_path(session_polygons) if session_polygons else None
     if sr and os.path.isfile(sr):
@@ -578,6 +577,9 @@ def resolve_authoritative_spatial_paths(
     if sp and os.path.isfile(sp):
         out["polygons"] = sp
         out["source"] = out["source"] or "session"
+
+    if not root:
+        return out
 
     sf = (manifest or {}).get("spatial_filter") if isinstance(manifest, dict) else None
     if isinstance(sf, dict):

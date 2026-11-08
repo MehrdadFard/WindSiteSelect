@@ -85,9 +85,10 @@ Supported inputs follow normal QGIS/GDAL raster and vector formats. CRS handling
 4. **Depth analysis** (as needed) — select DEM/bathymetry, set thresholds, run screening.
 5. **Prospect area** — combine screens; optionally polygonize.
 6. **Spatial filter** — add exclude/include layers, run spatial filtering to obtain the final suitable mask and polygons.
-7. **Decision-making / MCA** — add criterion layers, set weights and roles, run MCA.
-8. **Review outputs** — rasters, polygons, and optional Excel/CSV report in a user-chosen folder.
-9. **Iterate** — re-run spatial or MCA steps as inputs change; the plugin tracks the current run via `results/current_run.json`.
+7. **Decision Making** — add raster criteria (Add Layer / Add Raster Criterion), or Load Criteria Setup; set weights and roles. Optionally Save Criteria Setup for reuse.
+8. **MCA Evaluation** — generate the analysis grid, then Run MCA Analysis (requires Spatial Filtering outputs).
+9. **Review outputs** — rasters, polygons, and optional Excel/CSV report in a user-chosen folder.
+10. **Iterate** — re-run spatial or MCA steps as inputs change; the plugin tracks the current run via `results/current_run.json`.
 
 ---
 
@@ -95,10 +96,37 @@ Supported inputs follow normal QGIS/GDAL raster and vector formats. CRS handling
 
 MCA scores candidate locations using user-defined raster criteria and weights.
 
+### Required order
+
+1. Complete **Prospect Analysis** and **Spatial Filtering** (authoritative suitable mask / polygons for the current run).
+2. On **Decision Making**, add criteria and set weights/roles.
+3. On **MCA Evaluation**, **generate the analysis grid**, then **Run MCA Analysis**.
+
+If Spatial Filtering has not been completed, MCA will stop with an actionable error asking you to finish Spatial Filtering before aligning criteria and running the analysis. The plugin does not silently substitute an unrelated old raster.
+
+### Adding criteria
+
+| Action | Meaning |
+|---|---|
+| **Add Layer** | Add a raster already loaded in the current QGIS project as one MCA criterion. |
+| **Add Raster Criterion...** | Browse for a raster file and **append** it as a new criterion (does not replace existing rows). |
+| **Remove Layer** / **Normalize Weights** | Manage the current table rows. |
+
+### Saving and loading a criteria setup
+
+| Action | Meaning |
+|---|---|
+| **Save Criteria Setup...** | Write the current criteria names, weights, roles, and Include flags to a JSON file. |
+| **Load Criteria Setup...** | Replace the table with a previously saved JSON configuration (validated first). Invalid JSON leaves the current configuration unchanged. |
+| **New MCA Analysis** | Clears the current criteria configuration after confirmation. Cancel leaves settings unchanged. |
+
+These are **not** duplicates of Add Raster Criterion: file-add appends one raster; load restores a full saved setup.
+
+Additional notes:
+
 - Criteria can be marked beneficial or penalizing and included/excluded from a run.
 - Weights are user-controlled; an explicit normalize action is available (weights are **not** silently rewritten on restore).
-- Criteria and weights can be exported/imported as JSON.
-- For **saved projects**, criteria/weights are persisted in QSettings under a project-scoped key (legacy internal namespace retained for compatibility).
+- For **saved projects**, criteria/weights are also persisted in QSettings under a project-scoped key (legacy internal namespace retained for compatibility).
 - Computed score matrices are **not** restored from settings; re-run MCA to recompute scores.
 - MCA operates on the authoritative spatial suitability outputs for the current run (session → manifest → logged legacy alias fallback). Mixing a new-run raster with stale flat alias polygons is rejected.
 
@@ -144,19 +172,18 @@ No separate pip install is required for core functionality on a standard QGIS de
 
 | Environment | Status |
 |---|---|
-| Windows + QGIS **4.0.3** | **Verified** in development/release testing |
-| QGIS 3.44 LTR | **Not verified** in this project |
+| Windows + QGIS **4.0.3** | **Verified** (Stable 0.3.1) |
+| QGIS 3.44 LTR / other QGIS 3.x | **Not supported** by this Stable release |
 | Linux | **Not verified** |
 | macOS | **Not verified** |
 
-`metadata.txt` currently declares `qgisMinimumVersion=3.22` and `qgisMaximumVersion=4.99` as a static range. Treat versions other than the verified environment as untested until confirmed.
+`metadata.txt` declares `qgisMinimumVersion=4.0` and `qgisMaximumVersion=4.99`. QGIS 3.44 LTR users should not treat 0.3.1 as compatible until a separately verified build exists. Impact: LTR 3.x deployments cannot install this Stable build under the declared minimum without overriding metadata.
 
 ---
 
 ## 10. Current limitations
 
-- First public repository links (homepage, source, issue tracker) may still be pending.
-- Plugin remains marked **experimental** until public repository links are finalized.
+- Stable **0.3.1** is verified on **Windows QGIS 4.0.3** only.
 - Optional Excel reporting depends on **openpyxl** (not bundled; install into the QGIS Python environment if Excel export is required).
 - Interactive workflows assume a desktop QGIS session (not QGIS Server).
 - Large rasters and complex MCA grids can be memory- and disk-intensive.
@@ -212,7 +239,24 @@ Repository: https://github.com/MehrdadFard/WindSiteSelect
 
 ---
 
-## 14. License
+## 14. Release history
+
+### 0.3.1 – First Stable (2026-03)
+
+- First Stable release (`experimental=False`).
+- MCA criteria restore and row-mapping corrections so Decision Making table rows stay aligned after add/remove/load.
+- Improved Decision Making workflow: Add Raster Criterion vs Save/Load Criteria Setup, New MCA Analysis confirmation, clearer labels/tooltips.
+- Spatial Filtering current-run master reference for MCA; durable `results/` root restore after session/dialog reset so MCA finds `spatial_filtered.tif` from the current spatial run.
+- Verified on Windows with QGIS **4.0.3** only. QGIS 3.x (including 3.44 LTR), Linux, and macOS are not claimed as supported.
+
+### 0.3.0 – Public release candidate
+
+- First public packaging as Wind Site Select under package id `wind_site_select`.
+- Spatial results lifecycle with authoritative run manifests, MCA criteria persistence, GPKG WAL-safe publication, GPL-2.0-or-later licensing.
+
+---
+
+## 15. License
 
 **License:** [GPL-2.0-or-later](LICENSE) (GNU General Public License version 2 or any later version).
 

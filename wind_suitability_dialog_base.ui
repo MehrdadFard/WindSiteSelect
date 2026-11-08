@@ -1288,12 +1288,15 @@
           <widget class="QPushButton" name="btn_add_layer_to_table">
            <property name="minimumSize">
             <size>
-             <width>120</width>
+             <width>150</width>
              <height>0</height>
             </size>
            </property>
+           <property name="toolTip">
+            <string>Add a raster layer already loaded in the current QGIS project as an MCA criterion.</string>
+           </property>
            <property name="text">
-            <string>ADD Layer</string>
+            <string>Add Layer</string>
            </property>
           </widget>
          </item>
@@ -1301,25 +1304,47 @@
           <widget class="QPushButton" name="btn_add_layer_from_file">
            <property name="minimumSize">
             <size>
-             <width>120</width>
+             <width>150</width>
              <height>0</height>
             </size>
            </property>
+           <property name="toolTip">
+            <string>Browse for a raster file and add it as a new MCA criterion.</string>
+           </property>
            <property name="text">
-            <string>Add from file...</string>
+            <string>Add Raster Criterion...</string>
            </property>
           </widget>
+         </item>
+         <item>
+          <spacer name="verticalSpacer_weights_input_mgmt">
+           <property name="orientation">
+            <enum>Qt::Vertical</enum>
+           </property>
+           <property name="sizeType">
+            <enum>QSizePolicy::Fixed</enum>
+           </property>
+           <property name="sizeHint" stdset="0">
+            <size>
+             <width>20</width>
+             <height>8</height>
+            </size>
+           </property>
+          </spacer>
          </item>
          <item>
           <widget class="QPushButton" name="btn_remove_layer_from_table">
            <property name="minimumSize">
             <size>
-             <width>120</width>
+             <width>150</width>
              <height>0</height>
             </size>
            </property>
+           <property name="toolTip">
+            <string>Remove the selected criterion row(s) from the table.</string>
+           </property>
            <property name="text">
-            <string>REMOVE Layer</string>
+            <string>Remove Layer</string>
            </property>
           </widget>
          </item>
@@ -1327,12 +1352,107 @@
           <widget class="QPushButton" name="btn_normalize_weights">
            <property name="minimumSize">
             <size>
-             <width>120</width>
+             <width>150</width>
              <height>0</height>
             </size>
            </property>
+           <property name="toolTip">
+            <string>Rescale included criterion weights so they sum to 100%.</string>
+           </property>
            <property name="text">
-            <string>Normalizing</string>
+            <string>Normalize Weights</string>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <spacer name="verticalSpacer_weights_before_config">
+           <property name="orientation">
+            <enum>Qt::Vertical</enum>
+           </property>
+           <property name="sizeType">
+            <enum>QSizePolicy::Fixed</enum>
+           </property>
+           <property name="sizeHint" stdset="0">
+            <size>
+             <width>20</width>
+             <height>10</height>
+            </size>
+           </property>
+          </spacer>
+         </item>
+         <item>
+          <widget class="QLabel" name="lbl_criteria_configuration">
+           <property name="font">
+            <font>
+             <bold>true</bold>
+            </font>
+           </property>
+           <property name="text">
+            <string>Criteria Configuration</string>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QPushButton" name="btn_export_criteria">
+           <property name="minimumSize">
+            <size>
+             <width>150</width>
+             <height>0</height>
+            </size>
+           </property>
+           <property name="toolTip">
+            <string>Save the current criteria, weights, roles and inclusion settings to a JSON file.</string>
+           </property>
+           <property name="text">
+            <string>Save Criteria Setup...</string>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QPushButton" name="btn_import_criteria">
+           <property name="minimumSize">
+            <size>
+             <width>150</width>
+             <height>0</height>
+            </size>
+           </property>
+           <property name="toolTip">
+            <string>Restore a previously saved MCA criteria configuration from a JSON file.</string>
+           </property>
+           <property name="text">
+            <string>Load Criteria Setup...</string>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <spacer name="verticalSpacer_weights_before_new">
+           <property name="orientation">
+            <enum>Qt::Vertical</enum>
+           </property>
+           <property name="sizeType">
+            <enum>QSizePolicy::Fixed</enum>
+           </property>
+           <property name="sizeHint" stdset="0">
+            <size>
+             <width>20</width>
+             <height>10</height>
+            </size>
+           </property>
+          </spacer>
+         </item>
+         <item>
+          <widget class="QPushButton" name="btn_new_mca_analysis">
+           <property name="minimumSize">
+            <size>
+             <width>150</width>
+             <height>0</height>
+            </size>
+           </property>
+           <property name="toolTip">
+            <string>Start a new MCA analysis and clear the current criteria configuration.</string>
+           </property>
+           <property name="text">
+            <string>New MCA Analysis</string>
            </property>
           </widget>
          </item>
@@ -1540,6 +1660,16 @@
      <property name="spacing">
       <number>10</number>
      </property>
+     <item>
+      <widget class="QLabel" name="lbl_mca_workflow_hint">
+       <property name="wordWrap">
+        <bool>true</bool>
+       </property>
+       <property name="text">
+        <string>Workflow: Complete Prospect Analysis and Spatial Filtering first, then generate the MCA analysis grid and run MCA.</string>
+       </property>
+      </widget>
+     </item>
      <item>
       <widget class="QGroupBox" name="groupBox_mca_grid">
        <property name="title">
