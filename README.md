@@ -186,18 +186,18 @@ No separate pip install is required for core functionality on a standard QGIS de
 
 | Environment | Status |
 |---|---|
-| Windows + QGIS **4.0.3** | **Verified** (Stable 0.3.2) |
+| Windows + QGIS **4.0.3** | **Verified** (Stable 0.3.3) |
 | QGIS 3.44 LTR / other QGIS 3.x | **Not supported** by this Stable release |
 | Linux | **Not verified** |
 | macOS | **Not verified** |
 
-`metadata.txt` declares `qgisMinimumVersion=4.0` and `qgisMaximumVersion=4.99`. QGIS 3.44 LTR users should not treat 0.3.2 as compatible until a separately verified build exists. Impact: LTR 3.x deployments cannot install this Stable build under the declared minimum without overriding metadata.
+`metadata.txt` declares `qgisMinimumVersion=4.0` and `qgisMaximumVersion=4.99`. QGIS 3.44 LTR users should not treat 0.3.3 as compatible until a separately verified build exists. Impact: LTR 3.x deployments cannot install this Stable build under the declared minimum without overriding metadata.
 
 ---
 
 ## 10. Current limitations
 
-- Stable **0.3.2** is verified on **Windows QGIS 4.0.3** only.
+- Stable **0.3.3** is verified on **Windows QGIS 4.0.3** only.
 - Optional Excel reporting depends on **openpyxl** (not bundled; install into the QGIS Python environment if Excel export is required).
 - Interactive workflows assume a desktop QGIS session (not QGIS Server).
 - Large rasters and complex MCA grids can be memory- and disk-intensive.
@@ -255,6 +255,13 @@ Repository: https://github.com/MehrdadFard/WindSiteSelect
 ---
 
 ## 14. Release history
+
+### 0.3.3 – Stable security patch (2026-11)
+
+- Stable patch (`experimental=False`) addressing the QGIS Plugin Repository Bandit security scan.
+- Safe SQLite/GeoPackage identifier quoting with `sqlite_master` existence checks before dynamic `COUNT(*)` queries.
+- Silent `try/except/pass` and `try/except/continue` handlers replaced with logged best-effort helpers so cleanup/fallback failures remain visible without aborting GIS workflows.
+- Verified on Windows with QGIS **4.0.3** only. QGIS 3.x (including 3.44 LTR), Linux, and macOS are not claimed as supported.
 
 ### 0.3.2 – Stable (2026-11)
 

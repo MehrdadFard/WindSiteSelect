@@ -267,7 +267,8 @@ class AttributeFilterDialog(QDialog):
 
             try:
                 num = float(m.group(1))
-            except Exception:
+            except Exception as _be_exc:
+                _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L271")
                 continue
 
             # if explicitly kV in this chunk, convert to volts
@@ -491,7 +492,8 @@ class AttributeFilterDialog(QDialog):
             for v in selected_values:
                 try:
                     num = float(v)
-                except Exception:
+                except Exception as _be_exc:
+                    _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L495")
                     continue
                 nums.append(num)
             if not nums:
@@ -645,8 +647,8 @@ class WindSuitability:
             )
             rmin = float(stats.minimumValue)
             rmax = float(stats.maximumValue)
-        except Exception:
-            pass
+        except Exception as _be_exc:
+            _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L649")
         return ext_str, width, height, rmin, rmax
 
     def _log_clip_audit_record(self, record):
@@ -690,8 +692,8 @@ class WindSuitability:
                 fb = float(val_b) if val_b is not None else None
                 if fa is not None and fb is not None and math.isclose(fa, fb, rel_tol=0.0, abs_tol=1e-9):
                     return "SAME", val_a, val_b
-            except (TypeError, ValueError):
-                pass
+            except (TypeError, ValueError) as _be_exc:
+                _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L694")
         return "CHANGED", val_a, val_b
 
     def _log_clip_audit_comparison(self, run_a, run_b, label_a="Run A", label_b="Run B"):
@@ -783,8 +785,8 @@ class WindSuitability:
                 audit_file = os.path.join(audit_dir, "clip_audit_history.json")
                 with open(audit_file, "w", encoding="utf-8") as fh:
                     json.dump(self._clip_audit_history, fh, indent=2)
-        except Exception:
-            pass
+        except Exception as _be_exc:
+            _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L787")
 
         return record
 
@@ -804,13 +806,13 @@ class WindSuitability:
         try:
             if self.tool_rectangle and self.canvas.mapTool() == self.tool_rectangle:
                 self.canvas.unsetMapTool(self.tool_rectangle)
-        except Exception:
-            pass
+        except Exception as _be_exc:
+            _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L808")
         try:
             if self.tool_polygon and self.canvas.mapTool() == self.tool_polygon:
                 self.canvas.unsetMapTool(self.tool_polygon)
-        except Exception:
-            pass
+        except Exception as _be_exc:
+            _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L813")
         self.clear_rubber_band()
         self._last_rubber_band = None
         # Clean up temporary files when plugin is unloaded
@@ -824,8 +826,8 @@ class WindSuitability:
                 if self.canvas and hasattr(self.canvas, 'scene') and self.canvas.scene():
                     self._last_rubber_band.reset(QgsWkbTypes.PolygonGeometry)
                     self.canvas.scene().removeItem(self._last_rubber_band)
-            except Exception:
-                pass
+            except Exception as _be_exc:
+                _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L828")
             self._last_rubber_band = None
 
     # Fixed output filenames: only results/ and temp/, no nested subfolders
@@ -933,8 +935,8 @@ class WindSuitability:
             os.makedirs(self.results_dir, exist_ok=True)
             os.makedirs(self.temp_dir, exist_ok=True)
             _rl.ensure_results_layout(self.results_dir)
-        except Exception:
-            pass
+        except Exception as _be_exc:
+            _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L937")
         self._remember_results_root()
 
     def _remember_results_root(self):
@@ -944,8 +946,8 @@ class WindSuitability:
             return
         try:
             QSettings().setValue("wind_site_select/last_results_root", self._normalize_path(root))
-        except Exception:
-            pass
+        except Exception as _be_exc:
+            _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L948")
 
     def _restore_results_root_from_settings(self):
         """
@@ -970,8 +972,8 @@ class WindSuitability:
                     self.temp_dir = temp_candidate
                     try:
                         os.makedirs(self.temp_dir, exist_ok=True)
-                    except Exception:
-                        pass
+                    except Exception as _be_exc:
+                        _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L974")
             return coerced
         return None
 
@@ -993,8 +995,8 @@ class WindSuitability:
             try:
                 os.makedirs(results, exist_ok=True)
                 _rl.ensure_results_layout(results)
-            except Exception:
-                pass
+            except Exception as _be_exc:
+                _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L997")
             self.results_dir = self._normalize_path(results)
             parent = os.path.dirname(results)
             if parent and os.path.basename(results).lower() == "results":
@@ -1003,8 +1005,8 @@ class WindSuitability:
                 self.temp_dir = temp_candidate
                 try:
                     os.makedirs(self.temp_dir, exist_ok=True)
-                except Exception:
-                    pass
+                except Exception as _be_exc:
+                    _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L1007")
             return self._normalize_path(results)
         # Fallback: plugin data/results under plugin_dir (stable, project-agnostic)
         fallback = self._normalize_path(os.path.join(self.plugin_dir, "data", "results"))
@@ -1018,8 +1020,8 @@ class WindSuitability:
             if not self.temp_dir:
                 self.temp_dir = self._normalize_path(os.path.join(self.plugin_dir, "data", "temp"))
                 os.makedirs(self.temp_dir, exist_ok=True)
-        except Exception:
-            pass
+        except Exception as _be_exc:
+            _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L1022")
         return fallback
 
     def _manifest_path(self):
@@ -1157,12 +1159,12 @@ class WindSuitability:
         # Close handles before replace
         try:
             self._release_path_handles(staging)
-        except Exception:
-            pass
+        except Exception as _be_exc:
+            _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L1161")
         try:
             self._release_path_handles(final)
-        except Exception:
-            pass
+        except Exception as _be_exc:
+            _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L1165")
         return self._replace_raster_atomically(staging, final)
 
     def _publish_gpkg_to_path(
@@ -1189,19 +1191,19 @@ class WindSuitability:
         try:
             self._release_path_handles(staging)
             self._release_path_handles(final)
-        except Exception:
-            pass
+        except Exception as _be_exc:
+            _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L1193")
 
         # After staging is valid, release plugin-owned layers on the destination path
         # so Windows can replace. Removing TOC layers does not guarantee every lock is gone.
         try:
             self._remove_vector_layers_for_disk_path(final)
-        except Exception:
-            pass
+        except Exception as _be_exc:
+            _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L1200")
         try:
             self._release_path_handles(final)
-        except Exception:
-            pass
+        except Exception as _be_exc:
+            _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L1204")
 
         ok, err = _rl.publish_gpkg_atomic(
             staging,
@@ -1227,13 +1229,13 @@ class WindSuitability:
                 # Drop GDAL dataset cache entries for this path without deleting the file.
                 if hasattr(gdal, "InvalidateCache"):
                     gdal.InvalidateCache()
-            except Exception:
-                pass
+            except Exception as _be_exc:
+                _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L1231")
             try:
                 ds = gdal.OpenEx(path_n, gdal.OF_READONLY)
                 ds = None
-            except Exception:
-                pass
+            except Exception as _be_exc:
+                _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L1236")
 
     def _publish_spatial_run_outputs(
         self,
@@ -1417,8 +1419,8 @@ class WindSuitability:
             if os.path.isfile(sidecar):
                 try:
                     os.remove(sidecar)
-                except Exception:
-                    pass
+                except Exception as _be_exc:
+                    _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L1421")
 
     def _release_and_remove_path(self, path):
         """Release QGIS layers using this path and remove file so it can be overwritten. Returns True if safe to write."""
@@ -1437,8 +1439,8 @@ class WindSuitability:
                 if src_norm == norm or norm in src_norm or src_norm in norm:
                     QgsProject.instance().removeMapLayer(layer.id())
                     break
-            except Exception:
-                pass
+            except Exception as _be_exc:
+                _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L1441")
         if os.path.exists(norm):
             try:
                 os.remove(norm)
@@ -1464,8 +1466,8 @@ class WindSuitability:
             return None
         try:
             clipped_layer.dataProvider().reloadData()
-        except Exception:
-            pass
+        except Exception as _be_exc:
+            _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L1468")
         QgsProject.instance().addMapLayer(clipped_layer)
         self._refresh_map_after_raster_layer_added(clipped_layer)
         return clipped_layer
@@ -1492,12 +1494,13 @@ class WindSuitability:
                 abs_src = os.path.normcase(os.path.abspath(self._normalize_path(src_path).replace("/", os.sep)))
                 if abs_src == abs_target:
                     QgsProject.instance().removeMapLayer(lid)
-            except Exception:
+            except Exception as _be_exc:
+                _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L1496")
                 continue
         try:
             QCoreApplication.processEvents()
-        except Exception:
-            pass
+        except Exception as _be_exc:
+            _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L1500")
 
     def _remove_vector_layers_for_disk_path(self, path):
         """Remove QgsVectorLayer instances whose primary source path matches disk path."""
@@ -1518,12 +1521,13 @@ class WindSuitability:
                 abs_src = os.path.normcase(os.path.abspath(src.replace("/", os.sep)))
                 if abs_src == abs_target:
                     QgsProject.instance().removeMapLayer(lid)
-            except Exception:
+            except Exception as _be_exc:
+                _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L1522")
                 continue
         try:
             QCoreApplication.processEvents()
-        except Exception:
-            pass
+        except Exception as _be_exc:
+            _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L1526")
 
     def _refresh_map_after_raster_layer_added(self, raster_layer):
         try:
@@ -1531,8 +1535,8 @@ class WindSuitability:
                 raster_layer.triggerRepaint()
             if getattr(self, "iface", None) and self.iface.mapCanvas():
                 self.iface.mapCanvas().refresh()
-        except Exception:
-            pass
+        except Exception as _be_exc:
+            _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L1535")
 
     def get_plugin_temp_dir(self):
         """Return plugin temp directory for intermediate files; fallback to system temp."""
@@ -1594,8 +1598,8 @@ class WindSuitability:
         if d and not os.path.exists(d):
             try:
                 os.makedirs(d, exist_ok=True)
-            except OSError:
-                pass
+            except OSError as _be_exc:
+                _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L1598")
         return v
 
     def _log_plugin_session_reset(self, mca_criteria_count=0):
@@ -1612,8 +1616,8 @@ class WindSuitability:
         msg = "\n".join(lines)
         try:
             QgsMessageLog.logMessage(msg, "WindSuitability", Qgis.Info)
-        except Exception:
-            pass
+        except Exception as _be_exc:
+            _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L1616")
         print(msg)
 
     def _unset_aoi_map_tools(self):
@@ -1621,13 +1625,13 @@ class WindSuitability:
         try:
             if self.tool_rectangle and self.canvas.mapTool() == self.tool_rectangle:
                 self.canvas.unsetMapTool(self.tool_rectangle)
-        except Exception:
-            pass
+        except Exception as _be_exc:
+            _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L1625")
         try:
             if self.tool_polygon and self.canvas.mapTool() == self.tool_polygon:
                 self.canvas.unsetMapTool(self.tool_polygon)
-        except Exception:
-            pass
+        except Exception as _be_exc:
+            _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L1630")
         self.tool_rectangle = None
         self.tool_polygon = None
 
@@ -1637,8 +1641,8 @@ class WindSuitability:
             for layer in QgsProject.instance().mapLayers().values():
                 if isinstance(layer, QgsVectorLayer) and layer.customProperty("wind_plugin_final_output"):
                     layer.removeCustomProperty("wind_plugin_final_output")
-        except Exception:
-            pass
+        except Exception as _be_exc:
+            _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L1641")
 
     def _reset_spatial_filter_ui(self):
         """Remove all spatial-filter rows from the dialog and leave one empty default row."""
@@ -1647,21 +1651,21 @@ class WindSuitability:
         for row_info in list(self.spatial_filter_rows):
             try:
                 self.remove_excluded_layer_row(row_info)
-            except Exception:
-                pass
+            except Exception as _be_exc:
+                _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L1651")
         for row_info in list(self.preferred_layer_rows):
             try:
                 self.remove_preferred_layer_row(row_info)
-            except Exception:
-                pass
+            except Exception as _be_exc:
+                _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L1656")
         self.spatial_filter_rows = []
         self.excluded_layer_rows = []
         self.preferred_layer_rows = []
         if hasattr(self.dlg, "layout_excluded_layers"):
             try:
                 self.add_excluded_layer_row()
-            except Exception:
-                pass
+            except Exception as _be_exc:
+                _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L1664")
 
     def _reset_dialog_ui_to_defaults(self):
         """Reset workflow-specific UI fields; bundled sample paths and layout structure are unchanged."""
@@ -1694,8 +1698,8 @@ class WindSuitability:
                 combo_aoi.blockSignals(False)
             try:
                 self._on_aoi_source_changed(0)
-            except Exception:
-                pass
+            except Exception as _be_exc:
+                _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L1698")
         spin_grid = getattr(d, "spin_grid_size", None)
         if spin_grid is not None:
             spin_grid.setValue(int(MCA_RESOLUTION))
@@ -1819,8 +1823,8 @@ class WindSuitability:
                     level=Qgis.Info,
                     duration=5,
                 )
-            except Exception:
-                pass
+            except Exception as _be_exc:
+                _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L1823")
 
     def reset_analysis_session(self):
         """Clear stored AOI/raster state for a clean run (Prospect tab Reset session button)."""
@@ -1838,8 +1842,8 @@ class WindSuitability:
                         to_remove.append(lid)
             for lid in to_remove:
                 proj.removeMapLayer(lid)
-        except Exception:
-            pass
+        except Exception as _be_exc:
+            _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L1842")
 
     def _prepare_new_aoi_definition(self):
         """
@@ -1875,8 +1879,8 @@ class WindSuitability:
         self._spatial_stale_after_aoi_change = True
         try:
             self._clear_transient_proximity_state(remove_layers=True)
-        except Exception:
-            pass
+        except Exception as _be_exc:
+            _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L1879")
         QgsMessageLog.logMessage(
             "[WindSuitability] Invalidated Spatial Filtering session state ({0}). "
             "Previous master was: {1}".format(reason, prev_spatial or "None"),
@@ -1936,8 +1940,8 @@ class WindSuitability:
                         to_remove.append(lid)
             for lid in to_remove:
                 proj.removeMapLayer(lid)
-        except Exception:
-            pass
+        except Exception as _be_exc:
+            _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L1940")
 
     def get_user_aoi_layer(self):
         """Single-feature memory layer for the current user AOI, or None."""
@@ -2196,10 +2200,10 @@ class WindSuitability:
                 for old_file in old_files:
                     try:
                         os.remove(old_file)
-                    except Exception:
-                        pass
-        except Exception:
-            pass
+                    except Exception as _be_exc:
+                        _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L2200")
+        except Exception as _be_exc:
+            _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L2202")
 
     def cleanup_temp_files(self):
         """
@@ -2216,8 +2220,8 @@ class WindSuitability:
                         protected.add(os.path.normcase(os.path.abspath(p)))
                         for side in _rl.gpkg_sidecar_paths(p):
                             protected.add(os.path.normcase(os.path.abspath(side)))
-            except Exception:
-                pass
+            except Exception as _be_exc:
+                _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L2220")
 
             def _safe_remove_file(path):
                 nonlocal cleaned_count
@@ -2238,8 +2242,8 @@ class WindSuitability:
                         "WindSuitability",
                         Qgis.Warning,
                     )
-                except Exception:
-                    pass
+                except Exception as _be_exc:
+                    _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L2242")
 
             if self.temp_dir and os.path.isdir(self.temp_dir):
                 for f in glob.glob(os.path.join(self.temp_dir, "wind_plugin_*")):
@@ -2261,8 +2265,8 @@ class WindSuitability:
                                 )
                         elif os.path.isfile(child):
                             _safe_remove_file(child)
-            except Exception:
-                pass
+            except Exception as _be_exc:
+                _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L2265")
             # System temp of known plugin patterns (backwards compatibility)
             temp_dir = tempfile.gettempdir()
             for pattern in ["wind_plugin_*", "powerline_reprojected_*.gpkg", "powerline_buffer_*.gpkg",
@@ -2437,8 +2441,8 @@ class WindSuitability:
             try:
                 transform = QgsCoordinateTransform(layer.crs(), aoi_layer.crs(), QgsProject.instance())
                 layer_extent = transform.transformBoundingBox(layer_extent)
-            except Exception:
-                pass  # If transformation fails, continue with original extents
+            except Exception as _be_exc:
+                _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L2441")
         
         if not layer_extent.intersects(aoi_extent):
             # Provide detailed error message with extent information
@@ -2480,8 +2484,8 @@ class WindSuitability:
         if os.path.exists(temp_output):
             try:
                 os.remove(temp_output)
-            except Exception:
-                pass
+            except Exception as _be_exc:
+                _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L2484")
 
         try:
             # User AOI only (never pipeline / MCA final polygons)
@@ -2526,9 +2530,9 @@ class WindSuitability:
                     fixed_layer = QgsVectorLayer(fixed_input_path, "Fixed Input", "ogr")
                     if fixed_layer.isValid():
                         working_layer = fixed_layer
-            except Exception:
+            except Exception as _be_exc:
                 # If fix fails, continue with original layer
-                pass
+                _rl.best_effort_ignore(_be_exc, "wind_suitability.py:fixgeometries_before_clip")
 
             # Clip the input layer to AOI
             processing.run("native:clip", {
@@ -2696,8 +2700,8 @@ class WindSuitability:
             if btn_add_vector is not None:
                 try:
                     btn_add_vector.clicked.disconnect()
-                except Exception:
-                    pass
+                except Exception as _be_exc:
+                    _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L2700")
                 btn_add_vector.clicked.connect(self.add_vector_criterion_from_file)
             self.dlg.btn_remove_layer_from_table.clicked.connect(self.remove_layer_from_weights_table)
             self.dlg.btn_normalize_weights.clicked.connect(self.normalize_weights)
@@ -2719,20 +2723,20 @@ class WindSuitability:
             if btn_export_crit is not None:
                 try:
                     btn_export_crit.clicked.disconnect()
-                except Exception:
-                    pass
+                except Exception as _be_exc:
+                    _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L2723")
                 btn_export_crit.clicked.connect(self.export_criteria_json)
             if btn_import_crit is not None:
                 try:
                     btn_import_crit.clicked.disconnect()
-                except Exception:
-                    pass
+                except Exception as _be_exc:
+                    _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L2729")
                 btn_import_crit.clicked.connect(self.import_criteria_json)
             if btn_new_mca is not None:
                 try:
                     btn_new_mca.clicked.disconnect()
-                except Exception:
-                    pass
+                except Exception as _be_exc:
+                    _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L2735")
                 btn_new_mca.clicked.connect(self.start_new_mca_analysis)
             self._configure_decision_making_ux()
             
@@ -2753,8 +2757,8 @@ class WindSuitability:
                         index = tab_widget.indexOf(legacy_include_tab)
                         if index != -1:
                             tab_widget.removeTab(index)
-                    except Exception:
-                        pass
+                    except Exception as _be_exc:
+                        _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L2757")
 
                 tab_widget.currentChanged.connect(self.on_tab_changed)
 
@@ -2847,8 +2851,8 @@ class WindSuitability:
                         break
             layout.insertWidget(insert_at, btn)
             self.dlg.btn_add_vector_criterion = btn
-        except Exception:
-            pass
+        except Exception as _be_exc:
+            _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L2851")
 
     def _configure_decision_making_ux(self):
         """Apply Decision Making button labels, tooltips, and MCA workflow guidance."""
@@ -2910,8 +2914,8 @@ class WindSuitability:
             try:
                 btn.setText(text)
                 btn.setToolTip(tip)
-            except Exception:
-                pass
+            except Exception as _be_exc:
+                _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L2914")
         for lbl_name, lbl_text in (
             ("lbl_add_criteria", self.tr("Add Criteria")),
             ("lbl_manage_criteria", self.tr("Manage Criteria")),
@@ -2922,8 +2926,8 @@ class WindSuitability:
             if lbl is not None:
                 try:
                     lbl.setText(lbl_text)
-                except Exception:
-                    pass
+                except Exception as _be_exc:
+                    _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L2926")
         hint = getattr(self.dlg, "lbl_mca_workflow_hint", None)
         workflow = self.tr(
             "Workflow: Complete Prospect Analysis and Spatial Filtering first, "
@@ -2934,8 +2938,8 @@ class WindSuitability:
             try:
                 hint.setText(workflow)
                 hint.setWordWrap(True)
-            except Exception:
-                pass
+            except Exception as _be_exc:
+                _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L2938")
         else:
             # Fallback when older .ui is loaded without the workflow label
             try:
@@ -2946,8 +2950,8 @@ class WindSuitability:
                     hint.setWordWrap(True)
                     tab_layout.insertWidget(0, hint)
                     self.dlg.lbl_mca_workflow_hint = hint
-            except Exception:
-                pass
+            except Exception as _be_exc:
+                _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L2950")
         run_btn = getattr(self.dlg, "btn_run_mca", None)
         if run_btn is not None:
             try:
@@ -2957,8 +2961,8 @@ class WindSuitability:
                         "an MCA analysis grid, and at least one included criterion."
                     )
                 )
-            except Exception:
-                pass
+            except Exception as _be_exc:
+                _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L2961")
 
     def _ensure_mca_criteria_toolbar_buttons(self):
         """Add Save/Load/New MCA buttons when missing from the .ui file."""
@@ -2981,8 +2985,8 @@ class WindSuitability:
                 font = lbl.font()
                 font.setBold(True)
                 lbl.setFont(font)
-            except Exception:
-                pass
+            except Exception as _be_exc:
+                _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L2985")
             layout.addWidget(lbl)
             self.dlg.lbl_criteria_configuration = lbl
         if getattr(self.dlg, "btn_export_criteria", None) is None:
@@ -3083,8 +3087,8 @@ class WindSuitability:
         if scroll_area:
             try:
                 scroll_area.setWidgetResizable(True)
-            except Exception:
-                pass
+            except Exception as _be_exc:
+                _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L3087")
 
         if self._excluded_layout_spacer is None:
             # Use proper enum access for QSizePolicy
@@ -3353,8 +3357,8 @@ class WindSuitability:
             name = first.split('!!::!!')[1] if '!!::!!' in first else first.strip()
             if name:
                 return f"{path}|layername={name}"
-        except Exception:
-            pass
+        except Exception as _be_exc:
+            _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L3357")
         return path
 
     def browse_excluded_layer_file(self, row_info):
@@ -3519,8 +3523,8 @@ class WindSuitability:
             try:
                 if os.path.exists(src) and os.path.exists(path) and os.path.samefile(src, path):
                     return layer, path
-            except Exception:
-                pass
+            except Exception as _be_exc:
+                _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L3523")
         layer = QgsRasterLayer(path, "Prospect", "gdal")
         if not layer.isValid():
             return None, None
@@ -3558,8 +3562,8 @@ class WindSuitability:
                 extent_from_gt = QgsRectangle(xmin, ymin, xmax, ymax)
                 res_x = float(gt[1])
                 res_y = float(abs(gt[5]))
-        except Exception:
-            pass
+        except Exception as _be_exc:
+            _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L3562")
         if _GDAL_AVAILABLE:
             try:
                 ds = gdal.Open(path, gdal.GA_ReadOnly)
@@ -3801,8 +3805,8 @@ class WindSuitability:
         # Ensure durable results root is available before resolving the current spatial run
         try:
             self._restore_results_root_from_settings()
-        except Exception:
-            pass
+        except Exception as _be_exc:
+            _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L3805")
 
         spatial_filtered_path = self._resolve_final_suitable_mask_raster_path()
         if spatial_filtered_path and os.path.exists(spatial_filtered_path):
@@ -4064,8 +4068,8 @@ class WindSuitability:
             try:
                 if os.path.exists(mask_path):
                     os.remove(mask_path)
-            except Exception:
-                pass
+            except Exception as _be_exc:
+                _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L4068")
 
     def _rasterize_vector_to_reference_grid(self, vector_path, reference_raster_path, output_raster_path, burn_value=1.0, layer_name=None, ref_info=None):
         """
@@ -4160,21 +4164,21 @@ class WindSuitability:
                         "WindSuitability",
                         Qgis.Info,
                     )
-            except Exception:
-                pass
+            except Exception as _be_exc:
+                _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L4164")
             self._release_and_remove_path(out_path)
             try:
                 shutil.move(out_tmp, out_path)
             except Exception:
                 try:
                     shutil.copy2(out_tmp, out_path)
-                except Exception:
-                    pass
+                except Exception as _be_exc:
+                    _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L4172")
             try:
                 if os.path.exists(out_tmp):
                     os.remove(out_tmp)
-            except Exception:
-                pass
+            except Exception as _be_exc:
+                _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L4177")
             success = os.path.exists(out_path)
             if success:
                 try:
@@ -4194,8 +4198,8 @@ class WindSuitability:
             if reproj_temp and os.path.exists(reproj_temp):
                 try:
                     os.remove(reproj_temp)
-                except Exception:
-                    pass
+                except Exception as _be_exc:
+                    _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L4198")
 
     def _warp_raster_to_reference_grid(self, reference_raster_path, input_path, output_path, nodata_value=MCA_NODATA, use_reference_as_grid=False):
         """
@@ -4259,8 +4263,8 @@ class WindSuitability:
                 if in_layer.isValid():
                     input_px_x = float(abs(in_layer.rasterUnitsPerPixelX()))
                     input_px_y = float(abs(in_layer.rasterUnitsPerPixelY()))
-            except Exception:
-                pass
+            except Exception as _be_exc:
+                _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L4263")
 
             tol = 1e-12
             if input_px_x is not None and input_px_y is not None:
@@ -4306,8 +4310,8 @@ class WindSuitability:
                             "WindSuitability",
                             Qgis.Info,
                         )
-                except Exception:
-                    pass
+                except Exception as _be_exc:
+                    _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L4310")
                 # Hard-stop on any grid mismatch.
                 self._strict_validate_raster_matches_master(output_path, grid_ref)
                 out_layer = QgsRasterLayer(output_path, "AlignCheck", "gdal")
@@ -4539,14 +4543,14 @@ class WindSuitability:
                     try:
                         if os.path.exists(tmp):
                             os.remove(tmp)
-                    except Exception:
-                        pass
+                    except Exception as _be_exc:
+                        _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L4543")
             else:
                 try:
                     if os.path.exists(tmp):
                         os.remove(tmp)
-                except Exception:
-                    pass
+                except Exception as _be_exc:
+                    _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L4549")
             if not (os.path.isfile(outp) and os.path.getsize(outp) > 0):
                 return False, self.tr("Failed to publish normalized Byte raster.")
             return True, ""
@@ -4704,8 +4708,8 @@ class WindSuitability:
                 return False
             try:
                 return os.stat(dir_a).st_dev == os.stat(dir_b).st_dev
-            except OSError:
-                pass
+            except OSError as _be_exc:
+                _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L4708")
             drive_a = os.path.splitdrive(dir_a)[0]
             drive_b = os.path.splitdrive(dir_b)[0]
             if drive_a and drive_b:
@@ -4859,8 +4863,8 @@ class WindSuitability:
                 try:
                     if os.path.isfile(staging):
                         os.remove(staging)
-                except Exception:
-                    pass
+                except Exception as _be_exc:
+                    _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L4863")
                 return False, self.tr(
                     "Could not stage replacement raster into the destination directory "
                     "(previous output left unchanged):\n{0}\n{1}"
@@ -4869,8 +4873,8 @@ class WindSuitability:
                 if not os.path.isfile(staging) or os.path.getsize(staging) <= 0:
                     try:
                         os.remove(staging)
-                    except Exception:
-                        pass
+                    except Exception as _be_exc:
+                        _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L4873")
                     return False, self.tr(
                         "Staged replacement raster is missing or empty "
                         "(previous output left unchanged):\n{0}"
@@ -4879,8 +4883,8 @@ class WindSuitability:
                 try:
                     if os.path.isfile(staging):
                         os.remove(staging)
-                except Exception:
-                    pass
+                except Exception as _be_exc:
+                    _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L4883")
                 return False, self.tr(
                     "Cannot verify staged replacement raster "
                     "(previous output left unchanged):\n{0}\n{1}"
@@ -4905,8 +4909,8 @@ class WindSuitability:
                 try:
                     if os.path.isfile(staging):
                         os.remove(staging)
-                except Exception:
-                    pass
+                except Exception as _be_exc:
+                    _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L4909")
 
         def _fail_with_sidecar_restore(primary_msg):
             restore_problems = self._restore_quarantined_sidecars(quarantined)
@@ -4946,8 +4950,8 @@ class WindSuitability:
                         extra = self.tr(
                             "\nReplacement failed and the previous output size changed unexpectedly:\n{0}"
                         ).format(final)
-                except OSError:
-                    pass
+                except OSError as _be_exc:
+                    _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L4950")
             return _fail_with_sidecar_restore(
                 self.tr(
                     "Cannot replace output. Previous output and any open QGIS layer were left unchanged:\n"
@@ -4968,8 +4972,8 @@ class WindSuitability:
             try:
                 if os.path.isfile(tmp):
                     os.remove(tmp)
-            except Exception:
-                pass
+            except Exception as _be_exc:
+                _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L4972")
         # If staging was the temp file, os.replace already moved it; nothing to delete.
 
         if not os.path.isfile(final) or os.path.getsize(final) <= 0:
@@ -5060,15 +5064,15 @@ class WindSuitability:
                 v = src_layer.dataProvider().sourceNoDataValue(1)
                 if v is not None and np.isfinite(float(v)):
                     warp_nd = float(v)
-            except Exception:
-                pass
+            except Exception as _be_exc:
+                _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L5064")
         wind_master = self._require_wind_master_path()
         if not self._warp_raster_to_reference_grid(wind_master, rp, tmp_warped, nodata_value=warp_nd):
             try:
                 if os.path.exists(tmp_warped):
                     os.remove(tmp_warped)
-            except Exception:
-                pass
+            except Exception as _be_exc:
+                _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L5071")
             return False
         try:
             ds = gdal.Open(tmp_warped, gdal.GA_ReadOnly)
@@ -5115,8 +5119,8 @@ class WindSuitability:
             try:
                 if os.path.exists(tmp_warped):
                     os.remove(tmp_warped)
-            except Exception:
-                pass
+            except Exception as _be_exc:
+                _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L5119")
 
     def _create_zero_byte_raster_same_grid(self, reference_raster_path, output_raster_path, ref_info=None):
         """Byte raster, same dimensions/CRS/geotransform as reference, all pixels 0. No rectangular vector layer."""
@@ -5235,8 +5239,8 @@ class WindSuitability:
             for g in geoms[1:]:
                 try:
                     aoi_geom = aoi_geom.combine(g)
-                except Exception:
-                    pass
+                except Exception as _be_exc:
+                    _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L5239")
         if not aoi_geom or aoi_geom.isEmpty():
             return {
                 "status": "missing_aoi",
@@ -5358,8 +5362,8 @@ class WindSuitability:
             try:
                 if os.path.exists(vpath):
                     os.remove(vpath)
-            except Exception:
-                pass
+            except Exception as _be_exc:
+                _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L5362")
 
     def _raster_multiply_byte_rasters(self, path_a, path_b, output_path):
         """
@@ -5434,8 +5438,8 @@ class WindSuitability:
             return False
         try:
             self.ensure_output_dirs(bp)
-        except Exception:
-            pass
+        except Exception as _be_exc:
+            _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L5438")
         ref_info = self._get_reference_raster_info(bp)
         if not ref_info:
             return False
@@ -5448,8 +5452,8 @@ class WindSuitability:
                     Qgis.Warning,
                 )
                 return False
-        except Exception:
-            pass
+        except Exception as _be_exc:
+            _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L5452")
         mask_path = self._normalize_path(
             os.path.join(self.get_plugin_temp_dir(), "prospect_aoi_mask_{}.tif".format(uuid.uuid4().hex[:8]))
         )
@@ -5470,22 +5474,22 @@ class WindSuitability:
                     Qgis.Warning,
                 )
                 return False
-        except Exception:
-            pass
+        except Exception as _be_exc:
+            _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L5474")
         tmp_out = self._normalize_path(bp + ".aoi_masked.tmp.tif")
         self._release_and_remove_path(tmp_out)
         ok = self._raster_multiply_byte_rasters(bp, mask_path, tmp_out)
         try:
             if os.path.exists(mask_path):
                 os.remove(mask_path)
-        except Exception:
-            pass
+        except Exception as _be_exc:
+            _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L5482")
         if not ok:
             try:
                 if os.path.exists(tmp_out):
                     os.remove(tmp_out)
-            except Exception:
-                pass
+            except Exception as _be_exc:
+                _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L5488")
             return False
         try:
             # Replace in one step; do not pre-delete target to avoid lock-related false failures.
@@ -5567,8 +5571,8 @@ class WindSuitability:
             try:
                 if os.path.exists(mask_path):
                     os.remove(mask_path)
-            except Exception:
-                pass
+            except Exception as _be_exc:
+                _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L5571")
 
     def _resolve_current_spatial_outputs(self):
         """
@@ -5734,8 +5738,8 @@ class WindSuitability:
             if mask_temp and os.path.exists(mask_temp):
                 try:
                     os.remove(mask_temp)
-                except Exception:
-                    pass
+                except Exception as _be_exc:
+                    _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L5738")
 
     def _create_constant_raster(self, reference_raster_path, output_raster_path, constant_value, ref_info=None):
         """
@@ -5809,8 +5813,8 @@ class WindSuitability:
             })
             if os.path.exists(clipped_path):
                 return clipped_path
-        except Exception:
-            pass
+        except Exception as _be_exc:
+            _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L5813")
         return None
 
     def _multipart_to_single_parts(self, vector_path, label="single"):
@@ -5829,8 +5833,8 @@ class WindSuitability:
             })
             if os.path.exists(out_path):
                 return out_path
-        except Exception:
-            pass
+        except Exception as _be_exc:
+            _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L5833")
         return None
 
     def _reproject_vector_to_crs(self, vector_path, target_crs, label="reproj"):
@@ -5855,8 +5859,8 @@ class WindSuitability:
             })
             if os.path.exists(out_path):
                 return out_path
-        except Exception:
-            pass
+        except Exception as _be_exc:
+            _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L5859")
         return None
 
     def _vector_extent_intersects_raster_extent(self, vector_layer, raster_extent, raster_crs):
@@ -5923,8 +5927,8 @@ class WindSuitability:
                         })
                         if result.get('OUTPUT') and os.path.exists(self._normalize_path(str(result['OUTPUT']))):
                             merged = True
-                    except Exception:
-                        pass
+                    except Exception as _be_exc:
+                        _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L5927")
                 if not merged or not os.path.exists(next_path):
                     return (False, "Failed to combine Exclude rasters. Check raster alignment or file locking.")
                 current = next_path
@@ -5939,8 +5943,8 @@ class WindSuitability:
                 if p and os.path.exists(p):
                     try:
                         os.remove(p)
-                    except Exception:
-                        pass
+                    except Exception as _be_exc:
+                        _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L5943")
 
     def _raster_calc_python(self, path_a, path_b, path_c, output_path, path_d=None):
         """
@@ -6045,23 +6049,23 @@ class WindSuitability:
             if ds_a:
                 try:
                     ds_a = None
-                except Exception:
-                    pass
+                except Exception as _be_exc:
+                    _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L6049")
             if ds_b:
                 try:
                     ds_b = None
-                except Exception:
-                    pass
+                except Exception as _be_exc:
+                    _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L6054")
             if ds_c:
                 try:
                     ds_c = None
-                except Exception:
-                    pass
+                except Exception as _be_exc:
+                    _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L6059")
             if ds_d:
                 try:
                     ds_d = None
-                except Exception:
-                    pass
+                except Exception as _be_exc:
+                    _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L6064")
 
     def _raster_merge_max_python(self, path_a, path_b, output_path):
         """
@@ -6132,13 +6136,13 @@ class WindSuitability:
             if ds_a:
                 try:
                     ds_a = None
-                except Exception:
-                    pass
+                except Exception as _be_exc:
+                    _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L6136")
             if ds_b:
                 try:
                     ds_b = None
-                except Exception:
-                    pass
+                except Exception as _be_exc:
+                    _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L6141")
 
     def apply_spatial_filters_raster(self):
         """
@@ -6236,8 +6240,8 @@ class WindSuitability:
                     try:
                         if hasattr(self, "iface") and self.iface:
                             self.iface.messageBar().pushWarning("Wind Site Select", "Layer '{}' already added.".format(name))
-                    except Exception:
-                        pass
+                    except Exception as _be_exc:
+                        _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L6240")
                     continue
                 seen_paths.add(key)
                 unique.append(r)
@@ -6250,8 +6254,8 @@ class WindSuitability:
                 spin = r.get('buffer_spin')
                 if spin is not None and hasattr(spin, 'value'):
                     return spin.value()
-            except Exception:
-                pass
+            except Exception as _be_exc:
+                _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L6254")
             return r.get('buffer', 0)
 
         self.ensure_output_dirs(prospect_path)
@@ -6287,12 +6291,12 @@ class WindSuitability:
                 self.spatial_filter_result_path = prev_spatial_result
                 self.spatial_filter_polygons_path = prev_spatial_polygons
                 self.spatial_filter_exclude_mask_path = prev_exclude_mask
-            except Exception:
-                pass
+            except Exception as _be_exc:
+                _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L6291")
             try:
                 _rl.safe_remove_tree(staging_dir, protected_paths=self._protected_manifest_paths())
-            except Exception:
-                pass
+            except Exception as _be_exc:
+                _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L6295")
             QMessageBox.warning(self.dlg, title, message)
         QgsMessageLog.logMessage(
             "[WindSuitability] Spatial filter rasterization grid: res_x={} res_y={} width={} height={}".format(
@@ -6374,16 +6378,16 @@ class WindSuitability:
                     try:
                         if hasattr(self, "iface") and self.iface:
                             self.iface.messageBar().pushWarning("Wind Site Select", "Layer '{}' must be polygon.".format(layer_name))
-                    except Exception:
-                        pass
+                    except Exception as _be_exc:
+                        _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L6378")
                 continue
             if not self._vector_extent_intersects_raster_extent(vl, ref_info['extent'], ref_info['crs']):
                 QgsMessageLog.logMessage("[WindSuitability] Exclude layer '{}' does not intersect prospect extent; skipped.".format(layer_name), "WindSuitability", Qgis.Warning)
                 try:
                     if hasattr(self, "iface") and self.iface:
                         self.iface.messageBar().pushWarning("Wind Site Select", "Layer '{}' does not intersect prospect area; skipped.".format(layer_name))
-                except Exception:
-                    pass
+                except Exception as _be_exc:
+                    _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L6386")
                 continue
             n_polygons = vl.featureCount()
             QgsMessageLog.logMessage(
@@ -6419,8 +6423,8 @@ class WindSuitability:
                             ref_info['width'], ref_info['height'], excl_r.width(), excl_r.height()))
                     return
             excl_r = None
-        except Exception:
-            pass
+        except Exception as _be_exc:
+            _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L6423")
 
         ex_min, ex_max, ex_nonzero, ex_total = self._log_mask_stats("ExcludeMask", exclude_mask_path)
         QgsMessageLog.logMessage(
@@ -6437,8 +6441,8 @@ class WindSuitability:
             try:
                 if hasattr(self, "iface") and self.iface:
                     self.iface.messageBar().pushWarning("Wind Site Select", "Exclude mask covers (nearly) entire area. Check exclude layer extents and prospect alignment.")
-            except Exception:
-                pass
+            except Exception as _be_exc:
+                _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L6441")
 
         # 4. Build include masks: fix geometries, clip to AOI, same grid. Include layers are optional.
         include_raster_paths = []
@@ -6535,8 +6539,8 @@ class WindSuitability:
             try:
                 if os.path.exists(inc_aoi_tmp):
                     os.remove(inc_aoi_tmp)
-            except Exception:
-                pass
+            except Exception as _be_exc:
+                _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L6539")
             c_min, c_max, c_nonzero, c_total = self._log_mask_stats("IncludeMask", include_mask_path)
             QgsMessageLog.logMessage(
                 "[WindSuitability] Include mask pixel count: non_zero = {}".format(c_nonzero),
@@ -6563,8 +6567,8 @@ class WindSuitability:
                             ref_info['width'], ref_info['height'], incl_r.width(), incl_r.height()))
                     return
             incl_r = None
-        except Exception:
-            pass
+        except Exception as _be_exc:
+            _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L6567")
 
         # 5. Ensure all inputs exist; verify grid match (width, height, CRS, extent) before calculator
         if not os.path.exists(prospect_path) or not os.path.exists(exclude_mask_path) or not os.path.exists(include_mask_path):
@@ -6600,8 +6604,8 @@ class WindSuitability:
                 if r.isValid():
                     return (r.width(), r.height())
                 r = None
-            except Exception:
-                pass
+            except Exception as _be_exc:
+                _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L6604")
             return (0, 0)
         pw, ph = ref_info['width'], ref_info['height']
         dw, dh = _raster_dims(aoi_mask_path)
@@ -6755,14 +6759,14 @@ class WindSuitability:
                             "WindSuitability",
                             Qgis.Warning,
                         )
-            except Exception:
-                pass
+            except Exception as _be_exc:
+                _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L6759")
             finally:
                 try:
                     if os.path.exists(raw_calc):
                         os.remove(raw_calc)
-                except Exception:
-                    pass
+                except Exception as _be_exc:
+                    _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L6765")
         if not calc_created or not os.path.exists(calc_created):
             _spatial_fail("Spatial Filters", "Raster calculator did not create output.")
             return
@@ -6823,8 +6827,8 @@ class WindSuitability:
             try:
                 if os.path.exists(poly_src_tmp):
                     os.remove(poly_src_tmp)
-            except Exception:
-                pass
+            except Exception as _be_exc:
+                _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L6827")
         if not os.path.exists(polygon_path):
             _spatial_fail("Spatial Filters", "Polygonize did not create staged output: {}.".format(polygon_path))
             return
@@ -6844,8 +6848,8 @@ class WindSuitability:
                 try:
                     if os.path.isfile(polygon_path):
                         os.remove(polygon_path)
-                except Exception:
-                    pass
+                except Exception as _be_exc:
+                    _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L6848")
                 try:
                     shutil.move(aoi_clip_out, polygon_path)
                 except Exception:
@@ -6895,8 +6899,8 @@ class WindSuitability:
         # Staging can be removed after successful publication (never touch protected manifest paths).
         try:
             _rl.safe_remove_tree(staging_dir, protected_paths=self._protected_manifest_paths())
-        except Exception:
-            pass
+        except Exception as _be_exc:
+            _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L6899")
 
         poly_layer_name = self._unique_map_layer_name("Final_Suitable_Areas")
         result_layer = QgsVectorLayer(published_poly, poly_layer_name, "ogr")
@@ -6926,8 +6930,8 @@ class WindSuitability:
                     self.apply_binary_symbology(excl_layer, QColor(200, 0, 0), self.tr("Excluded"))
                     QgsProject.instance().addMapLayer(excl_layer, True)
                     self._refresh_map_after_raster_layer_added(excl_layer)
-            except Exception:
-                pass
+            except Exception as _be_exc:
+                _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L6930")
 
         # Add spatial_filtered.tif (current published result)
         try:
@@ -6939,14 +6943,14 @@ class WindSuitability:
                     sf_layer.dataProvider().setUserNoDataValue(
                         1, [QgsRasterRange(float(BINARY_BYTE_NODATA), float(BINARY_BYTE_NODATA))]
                     )
-                except Exception:
-                    pass
+                except Exception as _be_exc:
+                    _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L6943")
                 self.apply_binary_symbology(sf_layer, QColor(0, 160, 0), self.tr("Suitable"))
                 self.mark_layer_as_final_output(sf_layer)
                 QgsProject.instance().addMapLayer(sf_layer, True)
                 self._refresh_map_after_raster_layer_added(sf_layer)
-        except Exception:
-            pass
+        except Exception as _be_exc:
+            _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L6949")
 
         # Avoid duplicate path layers for polygons
         try:
@@ -6957,8 +6961,8 @@ class WindSuitability:
                 if src and os.path.normpath(src) == os.path.normpath(published_poly):
                     if candidate.id() != result_layer.id():
                         QgsProject.instance().removeMapLayer(candidate.id())
-        except Exception:
-            pass
+        except Exception as _be_exc:
+            _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L6961")
         QgsProject.instance().addMapLayer(result_layer, True)
 
         core_after = {
@@ -6989,8 +6993,8 @@ class WindSuitability:
                     ext = QgsCoordinateTransform(result_layer.crs(), canvas_crs, QgsProject.instance()).transformBoundingBox(ext)
                 self.canvas.setExtent(ext)
                 self.canvas.refresh()
-        except Exception:
-            pass
+        except Exception as _be_exc:
+            _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L6993")
 
         alias_note = ""
         if pub_info.get("alias_notes"):
@@ -7003,8 +7007,8 @@ class WindSuitability:
                         "Wind Site Select",
                         "All pixels in AOI are excluded by spatial constraints.",
                     )
-            except Exception:
-                pass
+            except Exception as _be_exc:
+                _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L7007")
             QMessageBox.warning(
                 self.dlg,
                 "Spatial Filters Applied (No Suitable Area)",
@@ -7034,8 +7038,8 @@ class WindSuitability:
         distance_measure.setSourceCrs(layer.crs(), QgsProject.instance().transformContext())
         try:
             distance_measure.setEllipsoid(QgsProject.instance().ellipsoid())
-        except Exception:
-            pass
+        except Exception as _be_exc:
+            _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L7038")
 
         geographic = layer.crs().isGeographic()
 
@@ -7048,7 +7052,8 @@ class WindSuitability:
                     total_area += distance_measure.measureArea(geom)
                 else:
                     total_area += geom.area()
-            except Exception:
+            except Exception as _be_exc:
+                _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L7052")
                 continue
 
         return max(total_area, 0.0)
@@ -7170,8 +7175,8 @@ class WindSuitability:
                     ds = None
                     self._gdal_raster_path_cache[path_abs_norm] = path_abs
                     return path_abs
-        except Exception:
-            pass
+        except Exception as _be_exc:
+            _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L7174")
 
         # Secondary path: QGIS provider can open directly, do not translate.
         try:
@@ -7179,8 +7184,8 @@ class WindSuitability:
             if ql.isValid():
                 self._gdal_raster_path_cache[path_abs_norm] = path_abs
                 return path_abs
-        except Exception:
-            pass
+        except Exception as _be_exc:
+            _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L7183")
 
         # Last resort only: create one translated temp copy and cache it.
         temp_tif = os.path.join(temp_dir, f"wind_plugin_raster_{uuid.uuid4().hex[:12]}.tif")
@@ -7198,15 +7203,15 @@ class WindSuitability:
                     Qgis.Info,
                 )
                 return temp_tif
-        except Exception:
-            pass
+        except Exception as _be_exc:
+            _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L7202")
         try:
             shutil.copy2(path_abs, temp_tif)
             if os.path.isfile(temp_tif):
                 self._gdal_raster_path_cache[path_abs_norm] = temp_tif
                 return temp_tif
-        except Exception:
-            pass
+        except Exception as _be_exc:
+            _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L7209")
         self._gdal_raster_path_cache[path_abs_norm] = path_abs
         return path_abs
 
@@ -7282,8 +7287,8 @@ class WindSuitability:
             try:
                 if os.path.exists(poly_src_tmp):
                     os.remove(poly_src_tmp)
-            except Exception:
-                pass
+            except Exception as _be_exc:
+                _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L7286")
 
         if not os.path.exists(raw_polygon_path):
             return None
@@ -7362,10 +7367,10 @@ class WindSuitability:
                             })
                             if os.path.exists(crs_fixed_path):
                                 return crs_fixed_path
-                        except Exception:
-                            pass
+                        except Exception as _be_exc:
+                            _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L7366")
         except Exception as e1:
-            pass  # Try next method
+            _rl.best_effort_ignore(e1, "wind_suitability.py:L7368")
         
         # Method 1b: Try using reprojectlayer (it saves to output format and handles conversion well)
         try:
@@ -7381,7 +7386,7 @@ class WindSuitability:
                     if saved_layer.crs() == layer.crs():
                         return temp_path
         except Exception as e1:
-            pass  # Try next method
+            _rl.best_effort_ignore(e1, "wind_suitability.py:L7384")
 
         # Method 2: Fix geometries first, then save
         fixed_path = os.path.join(temp_dir, f"{prefix}_fixed_{unique_id}.gpkg")
@@ -7402,10 +7407,10 @@ class WindSuitability:
                         })
                         if os.path.exists(temp_path):
                             return temp_path
-                    except Exception:
-                        pass
+                    except Exception as _be_exc:
+                        _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L7406")
         except Exception as e2:
-            pass  # Try next method
+            _rl.best_effort_ignore(e2, "wind_suitability.py:L7408")
 
         # Method 3: Already tried above, skip
 
@@ -7462,10 +7467,10 @@ class WindSuitability:
                                         saved_check = QgsVectorLayer(temp_path, "Check", "ogr")
                                         if saved_check.isValid() and saved_check.crs().authid() == target_crs.authid():
                                             return temp_path
-                    except Exception:
-                        pass
+                    except Exception as _be_exc:
+                        _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L7466")
         except Exception as e4:
-            pass
+            _rl.best_effort_ignore(e4, "wind_suitability.py:L7468")
 
         # If all methods failed, show error
         QMessageBox.warning(self.dlg, "Save Error", 
@@ -7859,8 +7864,8 @@ class WindSuitability:
                     })
                     if os.path.exists(temp_with_crs_path):
                         layer = QgsVectorLayer(temp_with_crs_path, "Temp", "ogr")
-                except Exception:
-                    pass  # Continue with original layer
+                except Exception as _be_exc:
+                    _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L7863")
             
             # Perform REAL reprojection
             processing.run("native:reprojectlayer", {
@@ -7948,8 +7953,8 @@ class WindSuitability:
         # Prefer geometries only; avoid loading all attributes for large layers.
         try:
             request.setSubsetOfAttributes([])
-        except Exception:
-            pass
+        except Exception as _be_exc:
+            _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L7952")
 
         candidates_checked = 0
         try:
@@ -7979,7 +7984,8 @@ class WindSuitability:
                         "feature_count": feature_count,
                         "used_spatial_filter": True,
                     }
-            except Exception:
+            except Exception as _be_exc:
+                _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L7983")
                 continue
 
         # Fallback when the provider ignores filterRect but layer extent overlaps:
@@ -8018,7 +8024,8 @@ class WindSuitability:
                             "used_spatial_filter": False,
                             "fallback_full_scan": True,
                         }
-                except Exception:
+                except Exception as _be_exc:
+                    _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L8022")
                     continue
 
         return False, (
@@ -8320,8 +8327,8 @@ class WindSuitability:
                     try:
                         if overlay_path and os.path.exists(overlay_path):
                             os.remove(overlay_path)
-                    except Exception:
-                        pass
+                    except Exception as _be_exc:
+                        _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L8324")
                     overlay_path = None
 
             if used_aoi_clip:
@@ -8795,8 +8802,8 @@ class WindSuitability:
             try:
                 if os.path.exists(temp_raster_output):
                     os.remove(temp_raster_output)
-            except Exception:
-                pass  # Ignore if can't delete
+            except Exception as _be_exc:
+                _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L8799")
         except Exception as copy_error:
             return None, f"Failed to copy raster to final output: {str(copy_error)}"
         
@@ -8930,8 +8937,8 @@ class WindSuitability:
                         try:
                             if os.path.exists(temp_aligned_prox):
                                 os.remove(temp_aligned_prox)
-                        except Exception:
-                            pass
+                        except Exception as _be_exc:
+                            _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L8934")
                 return True, None
             return False, "Proximity algorithm did not produce output"
         except Exception as e:
@@ -8940,8 +8947,8 @@ class WindSuitability:
             if temp_aligned_binary and os.path.exists(temp_aligned_binary):
                 try:
                     os.remove(temp_aligned_binary)
-                except Exception:
-                    pass
+                except Exception as _be_exc:
+                    _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L8944")
 
     def _compute_distance_minmax_for_suitability(self, working_distance_path, reference_raster_path, ref_info=None):
         """
@@ -8986,14 +8993,14 @@ class WindSuitability:
                         mask_valid = mask_valid & (m > 0.5)
                         print("  [MCA distance] Min/max computed over AOI-masked pixels only (not assuming min=0).")
                     dsm = None
-            except Exception:
-                pass
+            except Exception as _be_exc:
+                _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L8990")
             finally:
                 try:
                     if os.path.exists(mask_path):
                         os.remove(mask_path)
-                except Exception:
-                    pass
+                except Exception as _be_exc:
+                    _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L8996")
         else:
             print("  [MCA distance] Min/max computed over all valid (non-NoData) pixels (no AOI mask).")
 
@@ -9120,8 +9127,8 @@ class WindSuitability:
             if temp_aligned_distance and os.path.exists(temp_aligned_distance):
                 try:
                     os.remove(temp_aligned_distance)
-                except Exception:
-                    pass
+                except Exception as _be_exc:
+                    _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L9124")
 
     def _clamp_raster_to_unit_interval(self, input_raster_path, output_raster_path):
         """
@@ -9191,8 +9198,8 @@ class WindSuitability:
             renderer = QgsSingleBandPseudoColorRenderer(layer.dataProvider(), 1, shader)
             layer.setRenderer(renderer)
             layer.triggerRepaint()
-        except Exception:
-            pass
+        except Exception as _be_exc:
+            _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L9195")
 
     # -------------------------------------------------------------------------
     # Phase 2: Slope as MCA criterion (continuous penalizing). Clip DEM to study area first.
@@ -9262,8 +9269,8 @@ class WindSuitability:
             if mask_file and os.path.exists(mask_file):
                 try:
                     os.remove(mask_file)
-                except Exception:
-                    pass
+                except Exception as _be_exc:
+                    _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L9266")
 
     def _ensure_dem_projected_for_slope(self, dem_path, output_path):
         """
@@ -9418,8 +9425,8 @@ class WindSuitability:
             renderer = QgsSingleBandPseudoColorRenderer(layer.dataProvider(), 1, shader)
             layer.setRenderer(renderer)
             layer.triggerRepaint()
-        except Exception:
-            pass
+        except Exception as _be_exc:
+            _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L9422")
 
     def run_difference_operation(self, base_path, subtract_path, prefix="difference"):
         """Run a difference operation and return the output path."""
@@ -10085,8 +10092,8 @@ class WindSuitability:
         if scroll_area:
             try:
                 scroll_area.setWidgetResizable(True)
-            except Exception:
-                pass
+            except Exception as _be_exc:
+                _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L10089")
 
         if self._preferred_layout_spacer is None:
             # Use proper enum access for QSizePolicy
@@ -10666,8 +10673,8 @@ class WindSuitability:
                 if fixed_prospect.isValid() and fixed_prospect.featureCount() > 0:
                     fixed_prospect_path = fixed_prospect_temp
                     prospect_input = fixed_prospect
-        except Exception:
-            pass  # Continue with original if fix fails
+        except Exception as _be_exc:
+            _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L10670")
         
         # Fix buffer layer geometries if needed
         try:
@@ -10682,8 +10689,8 @@ class WindSuitability:
                 if fixed_buffer.isValid() and fixed_buffer.featureCount() > 0:
                     fixed_buffer_path = fixed_buffer_temp
                     buffer_layer = fixed_buffer
-        except Exception:
-            pass  # Continue with original if fix fails
+        except Exception as _be_exc:
+            _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L10686")
         
         # Use extractbylocation to select entire polygons (not clipped)
         extract_path = os.path.join(tempfile.gettempdir(), f"prospect_within_preferred_{uuid.uuid4().hex[:8]}.gpkg")
@@ -10757,8 +10764,8 @@ class WindSuitability:
                         else:
                             extract_path = fixed_path
                             result_layer = fixed_layer
-        except Exception:
-            pass
+        except Exception as _be_exc:
+            _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L10761")
 
         # Reload to ensure we have latest
         result_layer = QgsVectorLayer(extract_path, 
@@ -10908,8 +10915,8 @@ class WindSuitability:
                         })
                         if os.path.exists(reproj_path):
                             current_path = reproj_path
-                    except Exception:
-                        pass
+                    except Exception as _be_exc:
+                        _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L10912")
 
         used_layers = 0
         # Reference CRS is already defined above (before the saved layer check)
@@ -11030,8 +11037,8 @@ class WindSuitability:
                         if fixed_current_layer.isValid() and fixed_current_layer.featureCount() > 0:
                             fixed_current_path = fixed_current_temp
                             current_layer = fixed_current_layer
-                except Exception:
-                    pass  # Continue with original if fix fails
+                except Exception as _be_exc:
+                    _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L11034")
                 
                 # Fix intersect layer geometries if needed
                 try:
@@ -11046,8 +11053,8 @@ class WindSuitability:
                         if fixed_intersect_layer.isValid() and fixed_intersect_layer.featureCount() > 0:
                             fixed_intersect_path = fixed_intersect_temp
                             intersect_layer = fixed_intersect_layer
-                except Exception:
-                    pass  # Continue with original if fix fails
+                except Exception as _be_exc:
+                    _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L11050")
                 
                 try:
                     processing.run("native:extractbylocation", {
@@ -11147,11 +11154,11 @@ class WindSuitability:
                                     if error[0] == QgsVectorFileWriter.NoError and os.path.exists(crs_restored_path):
                                         extract_path = crs_restored_path
                                         test_layer = QgsVectorLayer(extract_path, "Test", "ogr")
-                                except Exception:
-                                    pass
+                                except Exception as _be_exc:
+                                    _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L11151")
                 except Exception as fix_err:
                     # If fix fails, continue with original
-                    pass
+                    _rl.best_effort_ignore(fix_err, "wind_suitability.py:preferred_extract_fix")
                 
                 # Final verification
                 test_layer = QgsVectorLayer(extract_path, "Test", "ogr")
@@ -11250,8 +11257,8 @@ class WindSuitability:
                                 result_layer = fixed_layer
                                 # Cannot use setCrs - it corrupts spatial data
                                 print(f"  WARNING: Using layer with wrong CRS - spatial location may be incorrect")
-            except Exception:
-                pass  # Continue with original if fix fails
+            except Exception as _be_exc:
+                _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L11254")
             
             # Final CRS verification - should already be correct, but double-check
             if result_layer.crs().authid() != reference_crs.authid():
@@ -11462,8 +11469,8 @@ class WindSuitability:
             tr = QgsCoordinateTransform(self.analysis_crs, canvas_crs, QgsProject.instance())
             try:
                 display_geom.transform(tr)
-            except Exception:
-                pass
+            except Exception as _be_exc:
+                _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L11466")
         rubber_band = QgsRubberBand(self.canvas, QgsWkbTypes.PolygonGeometry)
         qt_constants = self.get_qt_constants()
         rubber_band.setColor(qt_constants["red"])
@@ -11505,8 +11512,8 @@ class WindSuitability:
             aoi_vec.setCustomProperty("wind_plugin_user_aoi", True)
             aoi_vec.setName(self.tr("Wind Site Select AOI"))
             QgsProject.instance().addMapLayer(aoi_vec, False)
-        except Exception:
-            pass
+        except Exception as _be_exc:
+            _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L11509")
 
     def area_selected(self, rect):
         try:
@@ -11523,8 +11530,8 @@ class WindSuitability:
             try:
                 if self.tool_rectangle:
                     self.canvas.unsetMapTool(self.tool_rectangle)
-            except Exception:
-                pass
+            except Exception as _be_exc:
+                _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L11527")
 
     def apply_binary_symbology(self, layer, color, label):
         shader = QgsRasterShader()
@@ -11553,8 +11560,8 @@ class WindSuitability:
             layer.dataProvider().setUserNoDataValue(
                 1, [QgsRasterRange(float(BINARY_BYTE_NODATA), float(BINARY_BYTE_NODATA))]
             )
-        except Exception:
-            pass
+        except Exception as _be_exc:
+            _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L11557")
         layer.triggerRepaint()
     
     def apply_binary_symbology_to_converted_raster(self, layer):
@@ -11748,8 +11755,8 @@ class WindSuitability:
             try:
                 if os.path.exists(raw):
                     os.remove(raw)
-            except Exception:
-                pass
+            except Exception as _be_exc:
+                _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L11752")
             return False, str(e)
         if not (os.path.isfile(raw) and os.path.getsize(raw) > 0):
             return False, self.tr("gdal:rastercalculator finished but output file is missing or empty.")
@@ -11759,16 +11766,16 @@ class WindSuitability:
         try:
             if os.path.exists(raw):
                 os.remove(raw)
-        except Exception:
-            pass
+        except Exception as _be_exc:
+            _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L11763")
         if not ok:
             try:
                 if os.path.exists(outp):
                     # Remove only a failed publish attempt; caller keeps prior final if any.
                     # outp here is the prospect temp path in find_prospect_area — safe to clear.
                     os.remove(outp)
-            except Exception:
-                pass
+            except Exception as _be_exc:
+                _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L11771")
             return False, err or self.tr("Could not normalize GDAL fallback to Byte NoData=255.")
         return True, ""
 
@@ -11864,13 +11871,13 @@ class WindSuitability:
             if os.path.exists(mask_file):
                 try:
                     os.remove(mask_file)
-                except Exception:
-                    pass
+                except Exception as _be_exc:
+                    _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L11868")
             if temp_clipped and os.path.exists(temp_clipped):
                 try:
                     os.remove(temp_clipped)
-                except Exception:
-                    pass
+                except Exception as _be_exc:
+                    _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L11873")
 
     def clip_raster_by_extent(self, input_path, output_path, output_name):
         if not self.aoi_extent:
@@ -11993,8 +12000,8 @@ class WindSuitability:
             src = (layer.source() or "").split("|")[0].strip().strip('"')
             if src and os.path.isfile(src):
                 return self._normalize_path(src)
-        except Exception:
-            pass
+        except Exception as _be_exc:
+            _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L11997")
         return None
 
     def _collect_gdal_file_raster_layers(self):
@@ -12133,18 +12140,18 @@ class WindSuitability:
                     self._strict_validate_raster_matches_master(aligned_dem, master_wind)
                     try:
                         shutil.copy2(aligned_dem, clipped_dem)
-                    except Exception:
-                        pass
+                    except Exception as _be_exc:
+                        _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L12137")
                     # Overwrite leaves stale .aux.xml; purge sidecars and reload so legend stats match pixels.
                     try:
                         self._add_fresh_raster_layer_from_disk(clipped_dem, "Clipped DEM")
-                    except Exception:
-                        pass
+                    except Exception as _be_exc:
+                        _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L12142")
                     try:
                         if os.path.exists(aligned_dem):
                             os.remove(aligned_dem)
-                    except Exception:
-                        pass
+                    except Exception as _be_exc:
+                        _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L12147")
                     QgsMessageLog.logMessage(
                         "[DEBUG] Bathymetry clipped output overwritten with AOI-clipped->master alignment: {}".format(clipped_dem),
                         "WindSuitability",
@@ -12278,8 +12285,8 @@ class WindSuitability:
             try:
                 if os.path.exists(temp_output):
                     os.remove(temp_output)
-            except Exception:
-                pass
+            except Exception as _be_exc:
+                _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L12282")
             QMessageBox.critical(
                 self.dlg,
                 self.tr("Wind Analysis"),
@@ -12454,8 +12461,8 @@ class WindSuitability:
             try:
                 if os.path.exists(temp_output):
                     os.remove(temp_output)
-            except Exception:
-                pass
+            except Exception as _be_exc:
+                _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L12458")
             QMessageBox.critical(
                 self.dlg,
                 self.tr("DEM / Depth Analysis"),
@@ -12568,8 +12575,8 @@ class WindSuitability:
                 try:
                     if os.path.exists(temp_output):
                         os.remove(temp_output)
-                except Exception:
-                    pass
+                except Exception as _be_exc:
+                    _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L12572")
                 QMessageBox.critical(
                     self.dlg,
                     self.tr("Prospect area"),
@@ -12587,8 +12594,8 @@ class WindSuitability:
             try:
                 if os.path.exists(temp_output):
                     os.remove(temp_output)
-            except Exception:
-                pass
+            except Exception as _be_exc:
+                _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L12591")
             QMessageBox.critical(
                 self.dlg,
                 self.tr("Prospect area"),
@@ -12607,8 +12614,8 @@ class WindSuitability:
                 try:
                     if os.path.exists(temp_output):
                         os.remove(temp_output)
-                except Exception:
-                    pass
+                except Exception as _be_exc:
+                    _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L12611")
                 QMessageBox.critical(
                     self.dlg,
                     self.tr("Prospect area"),
@@ -12701,8 +12708,8 @@ class WindSuitability:
             try:
                 if os.path.exists(poly_src_tmp):
                     os.remove(poly_src_tmp)
-            except Exception:
-                pass
+            except Exception as _be_exc:
+                _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L12705")
 
         if not os.path.exists(temp_polygon):
             QMessageBox.warning(self.dlg, self.tr("Error"), self.tr("Failed to create prospect polygon file."))
@@ -12722,8 +12729,8 @@ class WindSuitability:
             try:
                 if os.path.exists(temp_polygon):
                     os.remove(temp_polygon)
-            except Exception:
-                pass
+            except Exception as _be_exc:
+                _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L12726")
             QMessageBox.information(
                 self.dlg,
                 self.tr("No Suitable Areas"),
@@ -12746,8 +12753,8 @@ class WindSuitability:
             try:
                 if os.path.exists(temp_polygon):
                     os.remove(temp_polygon)
-            except Exception:
-                pass
+            except Exception as _be_exc:
+                _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L12750")
 
         # Drop previous plugin polygon outputs from the map (same file series), not user layers
         for lid in list(QgsProject.instance().mapLayers().keys()):
@@ -12759,7 +12766,8 @@ class WindSuitability:
                 base = os.path.basename(src)
                 if "prospect_polygon_" in base and base.endswith(".gpkg"):
                     QgsProject.instance().removeMapLayer(lid)
-            except Exception:
+            except Exception as _be_exc:
+                _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L12763")
                 continue
 
         out_layer = QgsVectorLayer(polygon_path, self._unique_map_layer_name(self.tr("Prospect area")), "ogr")
@@ -12992,8 +13000,8 @@ class WindSuitability:
             if os.path.exists(temp_polygon):
                 try:
                     os.remove(temp_polygon)
-                except Exception:
-                    pass
+                except Exception as _be_exc:
+                    _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L12996")
             
             poly_src_tmp = self._normalize_path(
                 os.path.join(tempfile.gettempdir(), f"prospect_polygon_auto_src_{unique_id}.tif")
@@ -13021,8 +13029,8 @@ class WindSuitability:
                 try:
                     if os.path.exists(poly_src_tmp):
                         os.remove(poly_src_tmp)
-                except Exception:
-                    pass
+                except Exception as _be_exc:
+                    _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L13025")
             
             # Load and subset VALUE==1
             temp_layer = QgsVectorLayer(temp_polygon, "Prospect Polygon", "ogr")
@@ -13587,8 +13595,8 @@ class WindSuitability:
                 if os.path.exists(temp_file):
                     try:
                         os.remove(temp_file)
-                    except:
-                        pass
+                    except OSError as _be_exc:
+                        _rl.best_effort_ignore(_be_exc, "wind_suitability.py:protected_areas_temp_cleanup")
                     
         except Exception as e:
             QMessageBox.critical(
@@ -13805,8 +13813,8 @@ TIPS:
             src = vector_layer.source() if hasattr(vector_layer, "source") else None
             if src:
                 return self._normalize_path(str(src).split("|")[0].strip().strip('"'))
-        except Exception:
-            pass
+        except Exception as _be_exc:
+            _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L13809")
         return None
 
     def add_layer_from_file_to_weights_table(self):
@@ -14001,8 +14009,8 @@ TIPS:
                 out = n()
                 if out:
                     return str(out)
-            except Exception:
-                pass
+            except Exception as _be_exc:
+                _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L14005")
         elif n is not None:
             return str(n)
         if hasattr(layer, 'id') and callable(getattr(layer, 'id', None)):
@@ -14010,8 +14018,8 @@ TIPS:
                 out = layer.id()
                 if out is not None:
                     return str(out)
-            except Exception:
-                pass
+            except Exception as _be_exc:
+                _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L14014")
         return "Layer"
 
     def add_layer_to_weights_table(self, from_file_layer=None):
@@ -14116,8 +14124,8 @@ TIPS:
                         self.tr("Layers without geometry cannot be converted to an MCA criterion."),
                     )
                     return
-            except Exception:
-                pass
+            except Exception as _be_exc:
+                _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L14120")
 
             mode = self._select_vector_analysis_mode(self._safe_layer_name(selected_layer))
             if mode is None:
@@ -14231,8 +14239,8 @@ TIPS:
                             align_dir = self.get_plugin_temp_dir()
                         try:
                             os.makedirs(align_dir, exist_ok=True)
-                        except Exception:
-                            pass
+                        except Exception as _be_exc:
+                            _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L14235")
                         aoi_ref_path = self._normalize_path(
                             os.path.join(align_dir, "mca_vector_ref_aoi_{}.tif".format(uuid.uuid4().hex[:8]))
                         )
@@ -14493,16 +14501,16 @@ TIPS:
                     self.apply_binary_symbology_to_converted_raster(converted_raster)
                 try:
                     converted_raster.setCustomProperty("wind_plugin_transient_proximity", True)
-                except Exception:
-                    pass
+                except Exception as _be_exc:
+                    _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L14497")
                 
                 # Add raster layer to project and ensure it's visible
                 try:
                     _p = (converted_raster.source() or "").split("|")[0].strip().strip('"')
                     if _p:
                         self._remove_raster_layers_for_disk_path(_p)
-                except Exception:
-                    pass
+                except Exception as _be_exc:
+                    _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L14505")
                 QgsProject.instance().addMapLayer(converted_raster)
                 self._refresh_map_after_raster_layer_added(converted_raster)
                 
@@ -14858,8 +14866,8 @@ TIPS:
                 else:
                     print(f"  [Slope] Slope in degrees; stepwise: <= {good_deg}° -> 1, {good_deg}–{moderate_deg}° -> 0.7, {moderate_deg}–{max_deg}° -> 0.4, > {max_deg}° -> 0.")
                 print(f"  [Slope] Final slope raster extent matches clipped prospect area (AOI).")
-        except Exception:
-            pass
+        except Exception as _be_exc:
+            _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L14862")
         ok_suit, err_suit = self._slope_to_suitability_raster(slope_for_suitability, suitability_path, good_deg, moderate_deg, max_deg)
         if not ok_suit:
             QMessageBox.critical(self.dlg, "Slope suitability failed", err_suit or "Unknown error")
@@ -14873,8 +14881,8 @@ TIPS:
                 if self._warp_raster_to_reference_grid(master_wind, suitability_path, slope_master_path, nodata_value=MCA_NODATA):
                     suitability_path = slope_master_path
                     print("  [Slope] Aligned slope suitability to master analysis grid.")
-            except Exception:
-                pass
+            except Exception as _be_exc:
+                _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L14877")
         print(f"  [Slope] Final output is normalized slope suitability raster in [0,1]; passed into MCA weighting.")
         print(f"  [Slope] Raster passed into MCA weighting step: {suitability_path}")
         self._remove_raster_layers_for_disk_path(suitability_path)
@@ -15140,8 +15148,8 @@ TIPS:
             if weight_item:
                 try:
                     new_total += float(weight_item.text())
-                except ValueError:
-                    pass
+                except ValueError as _be_exc:
+                    _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L15144")
 
         return {
             'success': True,
@@ -15234,8 +15242,8 @@ TIPS:
             )
         try:
             self._persist_criteria_to_project_settings(self._serialize_criteria_for_persistence())
-        except Exception:
-            pass
+        except Exception as _be_exc:
+            _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L15238")
 
     def calculate_priority_placeholder(self):
         """Placeholder for priority calculation (Phase 4)"""
@@ -15870,8 +15878,8 @@ TIPS:
             # finished(int) fires on accept/reject/close for QDialog
             self.dlg.finished.connect(self._on_mca_dialog_finished_persist)
             self._mca_persist_signals_wired = True
-        except Exception:
-            pass
+        except Exception as _be_exc:
+            _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L15874")
 
     def _on_mca_dialog_finished_persist(self, _result=0):
         self._persist_current_mca_criteria_if_possible(reason="dialog close")
@@ -15962,8 +15970,8 @@ TIPS:
                         # Register in the project so MCA can resolve layers by id/name
                         try:
                             QgsProject.instance().addMapLayer(layer, False)
-                        except Exception:
-                            pass
+                        except Exception as _be_exc:
+                            _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L15966")
                         item["layer_id"] = layer.id()
                         item["layer_path"] = layer_path
                 elif layer_path:
@@ -15978,8 +15986,8 @@ TIPS:
                         "Wind Site Select",
                         "Criteria imported with {} layer warning(s). Check the log.".format(len(warnings)),
                     )
-                except Exception:
-                    pass
+                except Exception as _be_exc:
+                    _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L15982")
                 for w in warnings:
                     self.log_mca_message("  " + w)
             return True, ""
@@ -15994,14 +16002,14 @@ TIPS:
                     try:
                         table.setRowCount(0)
                         self.decision_making_layers = []
-                    except Exception:
-                        pass
+                    except Exception as _be_exc:
+                        _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L15998")
             else:
                 try:
                     table.setRowCount(0)
                     self.decision_making_layers = []
-                except Exception:
-                    pass
+                except Exception as _be_exc:
+                    _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L16004")
             return False, str(e)
 
     def _reindex_decision_making_layers(self):
@@ -16087,12 +16095,12 @@ TIPS:
         if layer is not None and getattr(layer, "isValid", lambda: False)():
             try:
                 layer_id = layer.id()
-            except Exception:
-                pass
+            except Exception as _be_exc:
+                _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L16091")
             try:
                 layer_path = layer.source() if hasattr(layer, "source") else layer_path
-            except Exception:
-                pass
+            except Exception as _be_exc:
+                _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L16095")
 
         entry = {
             "layer_name": item.get("layer_name"),
@@ -16181,8 +16189,8 @@ TIPS:
                 level=Qgis.Info,
                 duration=5,
             )
-        except Exception:
-            pass
+        except Exception as _be_exc:
+            _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L16185")
         return True
 
     def remove_layer_from_weights_table(self):
@@ -16700,8 +16708,8 @@ TIPS:
                     self._current_spatial_run_id = spatial_run
                     self.log_mca_message("MCA output directory (linked to spatial run): {}".format(mca_dir))
                     return self.mca_output_dir
-        except Exception:
-            pass
+        except Exception as _be_exc:
+            _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L16704")
         if self._current_spatial_run_id:
             mca_dir = self._normalize_path(
                 os.path.join(root, _rl.RUNS_SUBDIR, self._current_spatial_run_id, _rl.MCA_SUBDIR)
@@ -16763,8 +16771,8 @@ TIPS:
 
             try:
                 _rl.safe_remove_tree(staging_dir, protected_paths=self._protected_manifest_paths())
-            except Exception:
-                pass
+            except Exception as _be_exc:
+                _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L16767")
 
             # After successful publish, refresh path-matched project layers (not before).
             try:
@@ -16774,8 +16782,8 @@ TIPS:
                     src = self._layer_source_path(existing_layer)
                     if src and os.path.normpath(src) == os.path.normpath(output_path):
                         QgsProject.instance().removeMapLayer(existing_layer.id())
-            except Exception:
-                pass
+            except Exception as _be_exc:
+                _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L16778")
 
             display_name = layer_name
             if not hide_from_toc and layer_name in (
@@ -16882,8 +16890,8 @@ TIPS:
                 poly = geometry.asPolygon()
                 if poly and poly[0]:
                     return poly[0]
-        except Exception:
-            pass
+        except Exception as _be_exc:
+            _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L16886")
         return []
 
     @staticmethod
@@ -17652,10 +17660,10 @@ TIPS:
                             if raster.isValid():
                                 actual_width = raster.width()
                                 actual_height = raster.height()
-                        except Exception:
-                            pass
-                except Exception:
-                    pass
+                        except Exception as _be_exc:
+                            _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L17656")
+                except Exception as _be_exc:
+                    _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L17658")
                 
                 if actual_width != width or actual_height != height:
                     return None, (
@@ -17672,8 +17680,8 @@ TIPS:
             try:
                 if temp_reproj and os.path.exists(temp_reproj):
                     os.remove(temp_reproj)
-            except Exception:
-                pass
+            except Exception as _be_exc:
+                _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L17676")
 
     def generate_mca_grid(self):
         """
@@ -18476,8 +18484,8 @@ TIPS:
                                 if not suitable_union.contains(geom):
                                     no_data_count += 1
                                     continue
-                            except Exception:
-                                pass
+                            except Exception as _be_exc:
+                                _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L18480")
                         
                         # Transform point to raster CRS if needed
                         if transform:
@@ -18603,18 +18611,18 @@ TIPS:
                 try:
                     if aligned_temp and os.path.exists(aligned_temp):
                         os.remove(aligned_temp)
-                except Exception:
-                    pass
+                except Exception as _be_exc:
+                    _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L18607")
                 try:
                     if unit_clamped_temp and os.path.exists(unit_clamped_temp):
                         os.remove(unit_clamped_temp)
-                except Exception:
-                    pass
+                except Exception as _be_exc:
+                    _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L18612")
                 try:
                     if masked_temp and os.path.exists(masked_temp):
                         os.remove(masked_temp)
-                except Exception:
-                    pass
+                except Exception as _be_exc:
+                    _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L18617")
         if not self.mca_data_matrix:
             error_details = []
             error_details.append("No data could be extracted from criteria.")
@@ -18920,8 +18928,8 @@ TIPS:
                     nm = c.get("layer_name")
                     if nm:
                         expected_criteria.add(nm)
-        except Exception:
-            pass
+        except Exception as _be_exc:
+            _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L18924")
         if not expected_criteria:
             expected_criteria = set(r.get("criterion_name") for r in self.mca_data_matrix if r.get("criterion_name"))
         expected_criteria_count = len(expected_criteria)
@@ -19217,8 +19225,8 @@ TIPS:
                     if grid_layer and self._layer_cpp_alive(grid_layer) and grid_layer.renderer():
                         suitability_layer.setRenderer(grid_layer.renderer().clone())
                         suitability_layer.triggerRepaint()
-                except Exception:
-                    pass
+                except Exception as _be_exc:
+                    _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L19221")
             QgsProject.instance().addMapLayer(suitability_layer)
             self._register_mca_suitability_map_layer(suitability_layer)
             self.log_mca_message(
@@ -19481,8 +19489,8 @@ TIPS:
                 if scored_grid_layer.renderer():
                     layer.setRenderer(scored_grid_layer.renderer().clone())
                     layer.triggerRepaint()
-            except Exception:
-                pass
+            except Exception as _be_exc:
+                _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L19485")
 
         self.log_mca_message(
             "  ✓ {}: {} polygons (scores from fishnet, geometry from intersection)".format(
@@ -19594,8 +19602,8 @@ TIPS:
                     for line in f:
                         if line.strip().lower().startswith("version="):
                             return line.split("=", 1)[1].strip()
-        except Exception:
-            pass
+        except Exception as _be_exc:
+            _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L19598")
         return "unknown"
 
     def _criterion_name_matches_wind_density(self, criterion_name):
@@ -19686,8 +19694,8 @@ TIPS:
                         return None, None
                     if min_wind > max_wind:
                         min_wind, max_wind = max_wind, min_wind
-            except ValueError:
-                pass
+            except ValueError as _be_exc:
+                _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L19690")
         return min_wind, max_wind
 
     def _mca_report_summary_column_units(self):
@@ -19730,8 +19738,8 @@ TIPS:
         if hasattr(self.dlg, "spin_grid_size"):
             try:
                 grid_size = self.dlg.spin_grid_size.value()
-            except Exception:
-                pass
+            except Exception as _be_exc:
+                _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L19734")
         rows.append(("Grid_Cell_Size_m", grid_size if grid_size is not None else "N/A"))
         if self.mca_grid_layer and self.mca_grid_layer.isValid():
             crs = self.mca_grid_layer.crs()
@@ -19847,8 +19855,8 @@ TIPS:
             else:
                 idx = np.linspace(0, uniq.size - 1, max_unique_sample, dtype=int)
                 dist["sample_values"] = [float(uniq[i]) for i in idx]
-        except Exception:
-            pass
+        except Exception as _be_exc:
+            _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L19851")
         return dist
 
     def _log_pipeline_stage(self, stage_name, raster_path):
@@ -19896,8 +19904,8 @@ TIPS:
             orig = self._resolve_wind_input_raster_path()
             if orig and os.path.exists(orig):
                 paths["1_original_input"] = orig
-        except Exception:
-            pass
+        except Exception as _be_exc:
+            _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L19900")
         clipped = getattr(self, "wind_result_path", None) or getattr(self, "wind_master_path", None)
         if clipped and os.path.exists(clipped):
             paths["2_clipped_to_aoi"] = self._normalize_path(clipped)
@@ -19987,8 +19995,8 @@ TIPS:
             meta["band_max"] = float(stats.maximumValue)
             meta["band_mean"] = float(stats.mean)
             meta["band_valid_count"] = int(stats.elementCount)
-        except Exception:
-            pass
+        except Exception as _be_exc:
+            _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L19991")
         if _GDAL_AVAILABLE:
             try:
                 ds = gdal.Open(path, gdal.GA_ReadOnly)
@@ -19999,11 +20007,11 @@ TIPS:
                         try:
                             meta["scale"] = float(band.GetScale())
                             meta["offset"] = float(band.GetOffset())
-                        except Exception:
-                            pass
+                        except Exception as _be_exc:
+                            _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L20003")
                     ds = None
-            except Exception:
-                pass
+            except Exception as _be_exc:
+                _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L20006")
         return meta
 
     def _pick_zonal_field_name(self, fields, stat_name):
@@ -20387,7 +20395,8 @@ TIPS:
         for grid_id in grid_ids:
             try:
                 gid = int(grid_id)
-            except (TypeError, ValueError):
+            except (TypeError, ValueError) as _be_exc:
+                _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L20391")
                 continue
             records = [r for r in self.mca_data_matrix if r.get("grid_id") is not None and int(r["grid_id"]) == gid]
             if not records:
@@ -20477,8 +20486,8 @@ TIPS:
                     ))
                 else:
                     self.log_mca_message("  => Both grid cells have equal MCA scores")
-            except Exception:
-                pass
+            except Exception as _be_exc:
+                _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L20481")
 
         self.log_mca_message("=" * 50)
 
@@ -20717,8 +20726,8 @@ TIPS:
                         -float(str(r.get('MCA_Score', '0')).replace(',', '.'))
                     )
                 )
-            except Exception:
-                pass
+            except Exception as _be_exc:
+                _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L20721")
             
             # Prepare detailed report (one row per grid cell per criterion)
             detailed_data = []
@@ -20748,8 +20757,8 @@ TIPS:
                         int(r.get('Grid_ID', 0))
                     )
                 )
-            except Exception:
-                pass
+            except Exception as _be_exc:
+                _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L20752")
 
             # Write Excel/CSV via staging siblings; publish only after validation.
             xlsx_path = os.path.join(output_dir, "mca_report.xlsx")
@@ -20802,8 +20811,8 @@ TIPS:
                     try:
                         max_len = max(len(str(c.value)) if c.value is not None else 0 for c in col)
                         ws_summary.column_dimensions[col[0].column_letter].width = min(max_len + 2, 40)
-                    except Exception:
-                        pass
+                    except Exception as _be_exc:
+                        _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L20806")
 
                 ws_detail = wb.create_sheet("Detailed")
                 detail_headers = ['Grid_ID', 'Polygon_Area_km2', 'Criterion_Name', 'Raw_Value',
@@ -20826,8 +20835,8 @@ TIPS:
                     try:
                         max_len = max(len(str(c.value)) if c.value is not None else 0 for c in col)
                         ws_detail.column_dimensions[col[0].column_letter].width = min(max_len + 2, 45)
-                    except Exception:
-                        pass
+                    except Exception as _be_exc:
+                        _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L20830")
 
                 ws_meta = wb.create_sheet("Metadata")
                 meta_rows = self._build_mca_report_metadata_rows()
@@ -20839,8 +20848,8 @@ TIPS:
                     try:
                         max_len = max(len(str(c.value)) if c.value is not None else 0 for c in col)
                         ws_meta.column_dimensions[col[0].column_letter].width = min(max_len + 2, 80)
-                    except Exception:
-                        pass
+                    except Exception as _be_exc:
+                        _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L20843")
 
                 wb.save(xlsx_staging)
                 # Validate staged workbook is readable and has expected sheets/headers
@@ -20933,8 +20942,8 @@ TIPS:
 
             try:
                 _rl.safe_remove_tree(export_staging, protected_paths=self._protected_manifest_paths())
-            except Exception:
-                pass
+            except Exception as _be_exc:
+                _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L20937")
 
             self.log_mca_message(f"  ✓ Summary: {len(summary_data)} grid cells")
             self.log_mca_message(f"  ✓ Detailed: {len(detailed_data)} criterion records")
@@ -21028,7 +21037,8 @@ TIPS:
                 continue
             try:
                 grid_id = int(grid_id)
-            except (TypeError, ValueError):
+            except (TypeError, ValueError) as _be_exc:
+                _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L21032")
                 continue
             geom = feature.geometry()
             if not geom or geom.isEmpty():
@@ -21062,7 +21072,8 @@ TIPS:
                     continue
                 try:
                     grid_id = int(grid_id)
-                except (TypeError, ValueError):
+                except (TypeError, ValueError) as _be_exc:
+                    _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L21066")
                     continue
                 geom = feature.geometry()
                 if not geom or geom.isEmpty():
@@ -21136,8 +21147,8 @@ TIPS:
             if lyr.isValid():
                 try:
                     lyr.setSubsetString('"VALUE" = 1')
-                except Exception:
-                    pass
+                except Exception as _be_exc:
+                    _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L21140")
                 return lyr
         return None
 
@@ -21258,8 +21269,8 @@ TIPS:
                         "path": temp_path,
                         "source": "final_prospect_layer",
                     }
-            except Exception:
-                pass
+            except Exception as _be_exc:
+                _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L21262")
 
         if getattr(self, "prospect_result_path", None) and os.path.exists(self.prospect_result_path):
             prospect_dir = os.path.dirname(self.prospect_result_path)
@@ -21285,8 +21296,8 @@ TIPS:
                             "path": pg,
                             "source": "prospect_fallback",
                         }
-        except Exception:
-            pass
+        except Exception as _be_exc:
+            _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L21289")
 
         # Last resort only: this may represent only suitable patches, not full prospect area.
         final_path = self._resolve_spatial_final_polygons_path()
@@ -21328,8 +21339,8 @@ TIPS:
                         self.log_mca_message("    Prospect raster: {}".format(current_prospect))
                         self.log_mca_message("    Fallback polygon: {}".format(vec_src))
                         return None
-            except Exception:
-                pass
+            except Exception as _be_exc:
+                _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L21332")
         overlay = QgsVectorLayer(vec_src, "ProspectOverlay", "ogr")
         self.log_mca_message(
             "  Using prospect polygon source for MCA ranked raster clip ({}): {}".format(source_kind, vec_src)
@@ -21375,8 +21386,8 @@ TIPS:
             if reproj_path and os.path.exists(reproj_path):
                 try:
                     os.remove(reproj_path)
-                except Exception:
-                    pass
+                except Exception as _be_exc:
+                    _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L21379")
 
     def _mask_ranked_raster_to_prospect_shape(self, ranked_raster_path):
         """
@@ -21466,8 +21477,8 @@ TIPS:
             try:
                 if tmp_out and os.path.exists(tmp_out):
                     os.remove(tmp_out)
-            except Exception:
-                pass
+            except Exception as _be_exc:
+                _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L21470")
             return False
         finally:
             for p in (mask_rasterized, singlepart_temp, tmp_out):
@@ -21476,8 +21487,8 @@ TIPS:
                 try:
                     if os.path.exists(p) and p != vec_src:
                         os.remove(p)
-                except Exception:
-                    pass
+                except Exception as _be_exc:
+                    _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L21480")
 
     def save_mca_results(self):
         """
@@ -21562,8 +21573,8 @@ TIPS:
                         polygon_output = clipped_final
                         try:
                             self._remove_vector_layers_for_disk_path(polygon_output)
-                        except Exception:
-                            pass
+                        except Exception as _be_exc:
+                            _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L21566")
                         polygon_layer = QgsVectorLayer(
                             polygon_output,
                             self._unique_map_layer_name(MCA_CLIPPED_EXPORT_LAYER_NAME),
@@ -21679,8 +21690,8 @@ TIPS:
                                     _dbg_rl.width(), _dbg_rl.height(), grid_w, grid_h
                                 )
                             )
-                    except Exception:
-                        pass
+                    except Exception as _be_exc:
+                        _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L21683")
                     # Strict post-create guard against silent half-pixel/origin drift.
                     self._strict_validate_raster_matches_master(staged_raster, master_path)
                     # Final AOI clamp on ranked raster for visual edge consistency with user-defined AOI.
@@ -21701,10 +21712,10 @@ TIPS:
                                 try:
                                     shutil.copy2(ranked_aoi_tmp, staged_raster)
                                     os.remove(ranked_aoi_tmp)
-                                except Exception:
-                                    pass
-                    except Exception:
-                        pass
+                                except Exception as _be_exc:
+                                    _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L21705")
+                    except Exception as _be_exc:
+                        _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L21707")
 
                     ok_pub, err_pub = self._publish_raster_to_path(
                         staged_raster, raster_output, reference_path=None, byte_suitability=False
@@ -21726,8 +21737,8 @@ TIPS:
                         # Keep NoData out of visual/stats range explicitly.
                         try:
                             raster_layer.dataProvider().setUserNoDataValue(1, [QgsRasterRange(float(MCA_NODATA), float(MCA_NODATA))])
-                        except Exception:
-                            pass
+                        except Exception as _be_exc:
+                            _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L21730")
                         # Force statistics calculation if not already computed
                         provider = raster_layer.dataProvider()
                         provider.setEditable(False)  # Ensure provider is not in edit mode
@@ -21879,8 +21890,8 @@ TIPS:
                 try:
                     shutil.copy2(layer_path, out_path)
                     saved_criteria.append(os.path.basename(out_path))
-                except Exception:
-                    pass
+                except Exception as _be_exc:
+                    _rl.best_effort_ignore(_be_exc, "wind_suitability.py:L21883")
             if saved_criteria and hasattr(self.dlg, 'txt_mca_log'):
                 self.log_mca_message("Criterion rasters saved (Save? checked):")
                 for name in saved_criteria:

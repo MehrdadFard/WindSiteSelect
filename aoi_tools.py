@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+from .results_lifecycle import best_effort_ignore
 # SPDX-License-Identifier: GPL-2.0-or-later
 """
 AOI map tools and vector file helpers for Wind Site Select.
@@ -49,16 +50,16 @@ def _geometry_is_polygonal(g):
         t = g.type()
         if t == QgsWkbTypes.PolygonGeometry or (Qgis is not None and t == Qgis.GeometryType.Polygon):
             return True
-    except Exception:
-        pass
+    except Exception as _be_exc:
+        best_effort_ignore(_be_exc, "aoi_tools.py:L54")
     try:
         gt = QgsWkbTypes.geometryType(g.wkbType())
         if gt == QgsWkbTypes.PolygonGeometry or (Qgis is not None and gt == Qgis.GeometryType.Polygon):
             return True
         if hasattr(QgsWkbTypes, "GeometryType") and gt == QgsWkbTypes.GeometryType.Polygon:
             return True
-    except Exception:
-        pass
+    except Exception as _be_exc:
+        best_effort_ignore(_be_exc, "aoi_tools.py:L62")
     return False
 
 
@@ -80,8 +81,8 @@ def _collect_polygon_parts(geom):
             pg = QgsGeometry(part)
             if _geometry_is_polygonal(pg) and not pg.isEmpty():
                 out.append(pg)
-    except Exception:
-        pass
+    except Exception as _be_exc:
+        best_effort_ignore(_be_exc, "aoi_tools.py:L85")
     return out
 
 
@@ -111,8 +112,8 @@ def normalize_polygon_aoi_geometry(geom):
         buf = u.buffer(0.0, 8) if not u.isEmpty() else g.buffer(0.0, 8)
         if not buf.isEmpty() and _geometry_is_polygonal(buf):
             return buf
-    except Exception:
-        pass
+    except Exception as _be_exc:
+        best_effort_ignore(_be_exc, "aoi_tools.py:L116")
     try:
         src = u if not u.isEmpty() else g
         if not _geometry_is_polygonal(src) and not src.isEmpty():
@@ -122,16 +123,16 @@ def normalize_polygon_aoi_geometry(geom):
                 buf2 = src.buffer(pad, 8)
                 if not buf2.isEmpty() and _geometry_is_polygonal(buf2):
                     return buf2
-    except Exception:
-        pass
+    except Exception as _be_exc:
+        best_effort_ignore(_be_exc, "aoi_tools.py:L127")
     try:
         e = g.boundingBox()
         if e.isValid() and e.width() > 0 and e.height() > 0:
             br = QgsGeometry.fromRect(e)
             if not br.isEmpty() and _geometry_is_polygonal(br):
                 return br
-    except Exception:
-        pass
+    except Exception as _be_exc:
+        best_effort_ignore(_be_exc, "aoi_tools.py:L135")
     return g
 
 
@@ -161,7 +162,8 @@ def iter_vector_layers_from_path(path: str):
             uri = sub.uri()
             name = sub.name() or "layer"
             provider = sub.providerKey() or "ogr"
-        except Exception:
+        except Exception as _be_exc:
+            best_effort_ignore(_be_exc, "aoi_tools.py:L166")
             continue
         if not uri:
             continue
@@ -286,8 +288,8 @@ class PolygonMapTool(QgsMapTool):
                 self._rubber_band.reset(QgsWkbTypes.PolygonGeometry)
                 if self.canvas and self.canvas.scene():
                     self.canvas.scene().removeItem(self._rubber_band)
-            except Exception:
-                pass
+            except Exception as _be_exc:
+                best_effort_ignore(_be_exc, "aoi_tools.py:L291")
             self._rubber_band = None
 
     def _redraw_rubber(self):
@@ -369,8 +371,8 @@ class PolygonMapTool(QgsMapTool):
         if self._on_cancelled:
             try:
                 self._on_cancelled()
-            except Exception:
-                pass
+            except Exception as _be_exc:
+                best_effort_ignore(_be_exc, "aoi_tools.py:L374")
         self.canvas.unsetMapTool(self)
 
     def _try_finish(self):

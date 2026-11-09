@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
+from .results_lifecycle import best_effort_ignore
 """
 Helper functions for raster scoring with improved error handling.
 Addresses issues with raster calculator failures and disk space errors.
@@ -41,10 +42,10 @@ def cleanup_temp_files(directory, keep_recent=5):
         for filepath, _ in files[keep_recent:]:
             try:
                 os.remove(filepath)
-            except Exception:
-                pass
-    except Exception:
-        pass
+            except Exception as _be_exc:
+                best_effort_ignore(_be_exc, "scoring_raster_helper.py:L46")
+    except Exception as _be_exc:
+        best_effort_ignore(_be_exc, "scoring_raster_helper.py:L48")
 
 
 def check_disk_space(path, required_mb=100):

@@ -16,6 +16,25 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
+
+def best_effort_ignore(exc, context=""):
+    """
+    Record a non-fatal exception during best-effort cleanup / optional fallback.
+
+    Replaces silent ``except: pass`` so failures remain visible in debug logs without
+    aborting the surrounding GIS workflow. Never raises.
+    """
+    try:
+        import logging
+        logging.getLogger("wind_site_select").debug(
+            "best-effort ignored (%s): %s: %s",
+            context or "unspecified",
+            type(exc).__name__,
+            exc,
+        )
+    except Exception:
+        return
+
 CURRENT_RUN_MANIFEST_NAME = "current_run.json"
 MANIFEST_SCHEMA_VERSION = 1
 # v1 = raster-only criteria export; v2 adds optional vector-derived criterion metadata.
@@ -49,6 +68,59 @@ def normalize_path(path: Optional[str]) -> Optional[str]:
     if not path:
         return None
     return os.path.normpath(os.path.abspath(str(path).replace("/", os.sep)))
+
+
+def quote_sqlite_identifier(name: str) -> str:
+    """
+    Quote a SQLite/GeoPackage identifier safely for use in SQL.
+
+    SQLite cannot bind table/column names as parameters. Callers must validate
+    that ``name`` refers to an existing object (see ``sqlite_table_exists``)
+    before interpolating the returned value into SQL.
+    """
+    if name is None:
+        raise ValueError("SQLite identifier is None")
+    if not isinstance(name, str):
+        raise TypeError("SQLite identifier must be a string, got {}".format(type(name).__name__))
+    if name == "":
+        raise ValueError("SQLite identifier is empty")
+    if "\x00" in name:
+        raise ValueError("SQLite identifier contains NUL")
+    # Reject ASCII control characters (other than TAB which is also invalid here).
+    if any(ord(ch) < 32 for ch in name):
+        raise ValueError("SQLite identifier contains control characters")
+    return '"' + name.replace('"', '""') + '"'
+
+
+def sqlite_table_exists(conn, name: str) -> bool:
+    """True when ``name`` is a table or view in sqlite_master (parameterized lookup)."""
+    if not isinstance(name, str) or not name or "\x00" in name:
+        return False
+    row = conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type IN ('table', 'view') AND name = ? LIMIT 1",
+        (name,),
+    ).fetchone()
+    return bool(row)
+
+
+def count_rows_in_sqlite_table(conn, table_name: str) -> int:
+    """
+    COUNT(*) for a verified SQLite table/view name.
+
+    Flow:
+    1. Reject empty / NUL / control characters via quote_sqlite_identifier.
+    2. Confirm the identifier exists in sqlite_master with a bound parameter.
+    3. Only then interpolate the quoted identifier (identifiers cannot be bound).
+    """
+    quoted = quote_sqlite_identifier(table_name)
+    if not sqlite_table_exists(conn, table_name):
+        raise ValueError("SQLite table/view does not exist: {!r}".format(table_name))
+    # Bandit B608: table identifiers cannot use bound parameters. Existence was
+    # verified above with a parameterized sqlite_master query; ``quoted`` is
+    # double-quote escaped and contains no raw user SQL.
+    sql = "SELECT COUNT(*) FROM " + quoted  # nosec B608
+    row = conn.execute(sql).fetchone()
+    return int(row[0]) if row else 0
 
 
 def path_is_under_root(root: str, path: Optional[str]) -> bool:
@@ -198,8 +270,8 @@ def write_json_atomic(path: str, data: Any) -> Tuple[bool, str]:
         if not ok:
             try:
                 os.remove(tmp_path)
-            except OSError:
-                pass
+            except OSError as _be_exc:
+                best_effort_ignore(_be_exc, "results_lifecycle.py:L274")
             return False, err
         os.replace(tmp_path, path_n)
         return True, ""
@@ -207,8 +279,8 @@ def write_json_atomic(path: str, data: Any) -> Tuple[bool, str]:
         try:
             if os.path.isfile(tmp_path):
                 os.remove(tmp_path)
-        except OSError:
-            pass
+        except OSError as _be_exc:
+            best_effort_ignore(_be_exc, "results_lifecycle.py:L283")
         return False, "Atomic JSON write failed: {}".format(exc)
 
 
@@ -358,8 +430,8 @@ def publish_file_atomic(
                 if not ok:
                     try:
                         os.remove(staging_copy)
-                    except OSError:
-                        pass
+                    except OSError as _be_exc:
+                        best_effort_ignore(_be_exc, "results_lifecycle.py:L434")
                     return False, err or "Copied staging validation failed"
             replace_src = staging_copy
 
@@ -377,8 +449,8 @@ def publish_file_atomic(
         if staging_copy and os.path.isfile(staging_copy):
             try:
                 os.remove(staging_copy)
-            except OSError:
-                pass
+            except OSError as _be_exc:
+                best_effort_ignore(_be_exc, "results_lifecycle.py:L453")
 
 
 def gpkg_destination_sidecars_present(gpkg_path: str) -> List[str]:
@@ -471,12 +543,17 @@ def validate_gpkg_sqlite(
                         ", ".join(missing)
                     )
             if min_features is not None and contents:
-                # Count features from first expected layer or first contents table
+                # Count features from first expected layer or first contents table.
+                # ``layer`` comes from gpkg_contents / expected_layers (file metadata),
+                # never from free-form SQL text. Still validate via sqlite_master.
                 layer = (expected_layers[0] if expected_layers else contents[0])
                 if layer in tables:
-                    cnt = conn.execute(
-                        'SELECT COUNT(*) FROM "{}"'.format(layer.replace('"', '""'))
-                    ).fetchone()[0]
+                    try:
+                        cnt = count_rows_in_sqlite_table(conn, layer)
+                    except ValueError as exc:
+                        return False, "Invalid/unsafe GPKG layer name {!r}: {}".format(
+                            layer, exc
+                        )
                     if int(cnt) < int(min_features):
                         return False, "Layer {} feature count {} < {}".format(
                             layer, cnt, min_features
@@ -540,8 +617,8 @@ def publish_gpkg_atomic(
         try:
             if os.path.isfile(side):
                 os.remove(side)
-        except OSError:
-            pass
+        except OSError as _be_exc:
+            best_effort_ignore(_be_exc, "results_lifecycle.py:L621")
     return True, ""
 
 
